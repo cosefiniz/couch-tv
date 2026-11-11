@@ -142,6 +142,7 @@ export default function App() {
   const [tv, setTv] = useState(null);
   const [reach, setReach] = useState(null);
   const [apps, setApps] = useState(null);
+  const [tvApps, setTvApps] = useState(null);   // every app on the TV, in its home's order
   const [recs, setRecs] = useState(null);
   const [cont, setCont] = useState(null);
   const [screens, setScreens] = useState([]);
@@ -183,7 +184,7 @@ export default function App() {
     glass.current.focusTv = s.glass_focus === 'glass' || s.glass_focus === 'colour' ? s.glass_focus : null; showGlass();
     setHidden(Array.isArray(s.hidden_apps) ? s.hidden_apps : []);
   }).catch(() => {}); }, [reach, tvId]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { api.apps().then((d) => setApps(d.apps)).catch(() => setApps((a) => a || false)); api.screens().then((d) => setScreens(d.screens)).catch(() => {}); }, [reach]);
+  useEffect(() => { api.appOrder().then((d) => setTvApps(d.apps)).catch(() => {}); api.apps().then((d) => setApps(d.apps)).catch(() => setApps((a) => a || false)); api.screens().then((d) => setScreens(d.screens)).catch(() => {}); }, [reach]);
   useEffect(() => { if (tab === 'watch' && apps === false) api.apps().then((d) => setApps(d.apps)).catch(() => {}); }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
   const whoNow = useRef(who);
   whoNow.current = who;
@@ -343,7 +344,7 @@ export default function App() {
       {wide && askOn && <AskButton onAsk={openAsk} quiet={Boolean(offState)} />}
     </div>
   );
-  const watch = <Watch pull={pull} people={people} who={who || people[0]?.id || 'both'} recs={recs} cont={cont === undefined ? (recs === false ? false : recs?.continue) : cont} apps={apps} hidden={hidden} screens={screens} serviceName={serviceName} onPlay={onPlay} onLaunch={onLaunch} onScreen={onScreen} wide={wide} />;
+  const watch = <Watch pull={pull} people={people} who={who || people[0]?.id || 'both'} recs={recs} cont={cont === undefined ? (recs === false ? false : recs?.continue) : cont} apps={apps} tvApps={tvApps} hidden={hidden} screens={screens} serviceName={serviceName} onPlay={onPlay} onLaunch={onLaunch} onScreen={onScreen} wide={wide} />;
 
   return (
     <div className={`app ${wide ? 'is-wide' : ''} ${offState ? 'is-off' : ''}`}>

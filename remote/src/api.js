@@ -104,3 +104,26 @@ export function subscribeNow(onNow, onReach) {
   poll = setInterval(wake, 30000);
   return () => { closed = true; es?.close(); clearTimeout(retry); clearTimeout(recheck); clearInterval(poll); document.removeEventListener('visibilitychange', wake); window.removeEventListener('tv:resume', resume); };
 }
+
+// The stick's app hub (stick-guard/guard.py, port 5401, same host as the bridge): the media
+// position and length and seeking, through the TV helper app (tv-helper/), and TV app icons.
+const HUB = `${location.protocol}//${location.hostname}:5401`;
+async function hubCall(path, body, ms = 6000) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ms);
+  try {
+    const res = await fetch(HUB + path, body
+      ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: ctl.signal }
+      : { cache: 'no-store', signal: ctl.signal });
+    return res.ok ? await res.json() : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+export const hub = {
+  media: () => hubCall('/media'),
+  seek: (ms, pkg) => hubCall('/seek', { position_ms: Math.max(0, Math.round(ms)), package: pkg || undefined }),
+  icon: (pkg) => `${HUB}/icon?pkg=${encodeURIComponent(pkg)}`,
+};

@@ -11,5 +11,6 @@ export default defineConfig({
     port: 5402,
     proxy: { '/api': target },
   },
-  build: { outDir: 'dist', emptyOutDir: true, assetsInlineLimit: 0 },
+  // Older phones (Samsung J7 Prime's Chrome / Samsung Internet) need an older JS target.
+  build: { outDir: 'dist', emptyOutDir: true, assetsInlineLimit: 0, target: ['chrome87', 'safari14', 'firefox78', 'edge88'] },
 });

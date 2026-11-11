@@ -3,6 +3,22 @@ import * as Ic from './icons.jsx';
 import { tick } from './haptics.js';
 import { logoFor } from './appLogos.js';
 import { t } from './i18n.js';
+import { hub } from './api.js';
+
+// Never app tiles: the TV's own tools and home screens.
+const NOT_APPS = ['com.android.tv.settings', 'com.android.vending', 'app.couchtv.launcher', 'app.couchtv.helper',
+  'com.google.android.apps.tv.launcherx', 'com.google.android.tvlauncher'];
+
+// Every app on the TV, in the TV home's own order (GET /api/app-order), so Live TV, TV+ and the
+// rest show too, not only the streaming apps the bridge knows by name. Known apps keep their id,
+// colour and logo; the others launch by package and get their icon from the stick's hub.
+function tvAppList(apps, tvApps) {
+  if (!tvApps || !tvApps.length) return apps || [];
+  const known = new Map((apps || []).map((a) => [a.package, a]));
+  const list = tvApps.map((x) => known.get(x.package) || { id: x.package, name: x.name, package: x.package });
+  const seen = new Set(list.map((a) => a.package));
+  return list.concat((apps || []).filter((a) => a.installed && !seen.has(a.package)));
+}
 
 // Names that fit under an icon, like the iPhone home screen.
 const SHORT = { 'sbs-on-demand': 'SBS', 'prime-video': 'Prime Video', 'disney-plus': 'Disney+', 'paramount-plus': 'Paramount+', 'foxtel-go': 'Foxtel', 'hbo-max': 'HBO Max' };
@@ -38,7 +54,7 @@ function Poster({ show, sub, onPlay, dim }) {
   );
 }
 
-export function Watch({ pull, people, who, recs, cont: contIn, apps, hidden, screens, serviceName, onPlay, onLaunch, onScreen, wide }) {
+export function Watch({ pull, people, who, recs, cont: contIn, apps, tvApps, hidden, screens, serviceName, onPlay, onLaunch, onScreen, wide }) {
   const cont = contIn || [];
   const picks = (recs?.picks || []).filter((s) => s.playable !== false);
   const ready = (screens || []).filter((s) => s.ready);
@@ -63,9 +79,9 @@ export function Watch({ pull, people, who, recs, cont: contIn, apps, hidden, scr
         {apps === null && <p className="empty">{t('loading')}</p>}
         {apps === false && <p className="empty">{t('couldnt_load_apps')}</p>}
         <div className="apps">
-          {(apps || []).filter((a) => a.installed !== false && !['settings', 'home', 'moonlight'].includes(a.id) && !(hidden || []).includes(a.package)).map((a) => (
+          {tvAppList(apps, tvApps).filter((a) => a.installed !== false && !['settings', 'home', 'moonlight'].includes(a.id) && !NOT_APPS.includes(a.package) && !(hidden || []).includes(a.package)).map((a) => (
             <button key={a.id} className="app-tile" style={{ '--tile': a.colour || '#3a3a3c' }} onClick={() => { tick(); onLaunch(a); }}>
-              {logoFor(a) ? <AppIcon src={logoFor(a)} /> : <span className="app-icon"><span className="app-icon-name">{a.name}</span></span>}
+              {logoFor(a) ? <AppIcon src={logoFor(a)} /> : a.package ? <span className="app-icon"><img src={hub.icon(a.package)} alt="" loading="lazy" /></span> : <span className="app-icon"><span className="app-icon-name">{a.name}</span></span>}
               <span className="app-label">{SHORT[a.id] || a.name}</span>
             </button>
           ))}

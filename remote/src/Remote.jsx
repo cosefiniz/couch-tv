@@ -4,6 +4,7 @@ import { tick } from './haptics.js';
 import { logoFor } from './appLogos.js';
 import { Sheet, personColour } from './Sheets.jsx';
 import { t } from './i18n.js';
+import { hub } from './api.js';
 
 const DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
 
@@ -119,11 +120,73 @@ function Progress({ p, appName }) {
   );
 }
 
+
+// 1:05:09 or 12:34.
+const clock = (ms) => {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${x}` : `${m}:${x}`;
+};
+
+// What the TV helper app (tv-helper/, through the stick's hub) says is playing: the real length
+// and position from the app's own media session. Read every 3 s while this screen is visible.
+function useHubMedia(active) {
+  const [m, setM] = useState(null);
+  useEffect(() => {
+    if (!active) { setM(null); return undefined; }
+    let live = true;
+    const read = () => { if (document.visibilityState === 'visible') hub.media().then((j) => { if (live) setM(j && j.ok ? { ...j, at: Date.now() } : null); }); };
+    read();
+    const iv = setInterval(read, 3000);
+    return () => { live = false; clearInterval(iv); };
+  }, [active]);
+  return [m, setM];
+}
+
+// A bar you can drag to any moment of the video. Lets go -> the helper asks the app to seek there.
+// Apps that do not allow seeking from outside get the same bar, read only.
+function SeekBar({ m, setM, appName }) {
+  const [now, setNow] = useState(Date.now());
+  const [drag, setDrag] = useState(null);
+  const playing = m.state === 'playing';
+  useEffect(() => {
+    if (!playing) return undefined;
+    const iv = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(iv);
+  }, [playing]);
+  const dur = m.duration_ms;
+  const pos = Math.min(dur, Math.max(0, (m.position_ms || 0) + (playing ? now - m.at : 0)));
+  const shown = drag != null ? drag : pos;
+  const commit = () => {
+    if (drag == null) return;
+    const target = drag;
+    tick();
+    setM({ ...m, position_ms: target, at: Date.now() });
+    setDrag(null);
+    hub.seek(target, m.package);
+  };
+  return (
+    <div className="scrub seekable">
+      <input type="range" className="seek" min={0} max={dur} step={1000} value={shown} disabled={!m.can_seek}
+        aria-label="Videonun neresinde" style={{ '--p': `${(shown / dur) * 100}%` }}
+        onChange={(e) => setDrag(Number(e.target.value))}
+        onPointerUp={commit} onTouchEnd={commit} onKeyUp={commit} onBlur={commit} />
+      <div className="scrub-times">
+        <span>{clock(shown)}</span>
+        {appName && <span className="scrub-app">{appName}</span>}
+        <span>{clock(dur)}</span>
+      </div>
+    </div>
+  );
+}
+
 export function NowPlaying({ tv, appInfo, onKey, roomy }) {
   const p = tv?.playing;
   const off = !tv || tv.power === 'off' || !tv.tv_connected;
   const [open, setOpen] = useState(roomy);
   useEffect(() => setOpen(roomy), [roomy]);
+  const [media, setMedia] = useHubMedia(!off && !!tv?.app && tv.app.id !== 'home');
+  const seekable = media && media.playing && media.duration_ms > 0 && media.package === tv?.app?.package;
   let art; let title; let sub; let epTitle = null;
   if (p && !off) {
     art = p.poster ? <img src={p.poster} alt="" /> : logoFor(appInfo)
@@ -140,6 +203,11 @@ export function NowPlaying({ tv, appInfo, onKey, roomy }) {
       : <div className="art-app" style={{ background: appInfo.colour || '#3a3a3c' }}>{appInfo.name}</div>;
     title = appInfo.name;
     sub = t('app_open', { app: appInfo.name });
+  } else if (!off && seekable) {
+    // An app the bridge has no name for (TV+, a browser): the helper still knows what plays.
+    art = <img className="art-logo" src={hub.icon(media.package)} alt="" />;
+    title = media.title || tv.app?.name;
+    sub = tv.app?.name;
   } else {
     return null;
   }
@@ -152,7 +220,8 @@ export function NowPlaying({ tv, appInfo, onKey, roomy }) {
         <button className="round now-chev-btn" aria-expanded={open} aria-label={open ? 'Show fewer controls' : 'Show all playback controls'}
           onClick={() => { tick(); setOpen(!open); }}><Ic.Chevron className="now-chev" size={20} /></button>
       </div>
-      {p?.position_ms != null && <Progress p={p} appName={appInfo?.name} />}
+      {seekable ? <SeekBar m={media} setM={setMedia} appName={appInfo?.name || tv?.app?.name} />
+        : p?.position_ms != null && <Progress p={p} appName={appInfo?.name} />}
       {open && (
         <div className="transport">
           <button className="round glass" aria-label="Previous episode" onClick={key('previous')}><Ic.Prev /></button>
