@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Salon TV</string>
+    <string name="settings">Ayarlar</string>
+    <string name="update_title">Güncelleme</string>
+    <string name="tile_power">TV gücü</string>
+    <string name="connecting">Köprü aranıyor…</string>
+    <string name="not_found">Köprü bulunamadı.\nTelefon ev Wi-Fi\'sine bağlı mı?</string>
+    <string name="retry">Tekrar dene</string>
+    <string name="ch_tv">TV durumu</string>
+    <string name="ch_update">Güncellemeler</string>
+</resources>
