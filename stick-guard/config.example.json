@@ -1,0 +1,12 @@
+{
+  "tv_ip": "",
+  "adb_port": 5555,
+  "couch_tv_config": "~/couch-tv/config.json",
+  "profile": "tv",
+  "prime_profiles": {
+    "marks": [[200, 100, [30, 129, 170]], [200, 236, [188, 33, 67]], [200, 404, [0, 125, 78]]],
+    "index": 2
+  },
+  "sleep_guard": { "enabled": true, "from": 3, "to": 6, "idle_minutes": 60 },
+  "ntfy": false
+}

@@ -1,0 +1,19 @@
+# The stick guard (guard.py in this folder). Change User and paths, copy to /etc/systemd/system/,
+# then: sudo systemctl daemon-reload && sudo systemctl enable --now couch-tv-adb-guard
+# Needs Debian's adb package (apt install adb) and couch-tv's .venv (it uses zeroconf from there).
+[Unit]
+Description=couch-tv stick guard (ADB port, boot home, profiles, sleep guard, app hub)
+Wants=network-online.target time-sync.target
+After=network-online.target time-sync.target
+
+[Service]
+User=user
+Environment=HOME=/home/user
+Environment=PATH=/usr/bin:/bin
+ExecStart=/home/user/couch-tv/.venv/bin/python -u /home/user/couch-tv/stick-guard/guard.py
+Restart=always
+RestartSec=10
+MemoryMax=60M
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,28 @@
+# couch-tv bridge as a system service that waits for the clock (boxes with no RTC, such as a 4G
+# modem stick running Debian, start with a wrong time until NTP sets it). Change User and paths,
+# copy to /etc/systemd/system/, then:
+#   sudo systemctl enable systemd-time-wait-sync.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now couch-tv-bridge
+[Unit]
+Description=Couch TV bridge
+Wants=network-online.target time-sync.target
+After=network-online.target time-sync.target
+
+[Service]
+User=user
+Group=user
+WorkingDirectory=/home/user/couch-tv
+EnvironmentFile=-/home/user/couch-tv/.env
+Environment=HOME=/home/user
+Environment=PATH=/home/user/couch-tv/.venv/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/user/couch-tv/.venv/bin/python /home/user/couch-tv/bridge/server.py
+Restart=always
+RestartSec=5
+TimeoutStopSec=10
+# Keeps the bridge small on a 512 MB box; it restarts instead of starving the system.
+MemoryHigh=160M
+MemoryMax=220M
+
+[Install]
+WantedBy=multi-user.target
