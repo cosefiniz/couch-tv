@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Couch TV yardımcı</string>
+    <string name="channel_key">Kırmızı tuş: önceki kanal</string>
+    <string name="channel_key_desc">Canlı TV açıkken kırmızı tuş son iki kanal arasında geçiş yapar. Yalnızca hangi uygulamanın önde olduğunu görür, ekranı okumaz.</string>
+</resources>
