@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TV Tarayıcı</string>
+    <string name="back">Geri</string>
+    <string name="forward">İleri</string>
+    <string name="reload">Yenile</string>
+    <string name="home">Ana sayfa</string>
+    <string name="star">Yer işareti</string>
+    <string name="mode">Masaüstü / mobil görünüm</string>
+    <string name="zoom_in">Yakınlaştır</string>
+    <string name="zoom_out">Uzaklaştır</string>
+    <string name="cursor">İmleç aç / kapat</string>
+    <string name="menu">Menü</string>
+
+    <string name="address_hint">Ara veya adres yaz</string>
+    <string name="address_title">Adres veya arama</string>
+    <string name="go">Git</string>
+    <string name="cancel">Vazgeç</string>
+    <string name="search_tile">Ara veya web adresi yaz</string>
+    <string name="search_tile_sub">Ekran klavyesi açılır</string>
+    <string name="bookmarks">Yer işaretleri</string>
+    <string name="bookmarks_empty">Bir sayfadayken yıldız tuşuyla buraya ekleyebilirsin.</string>
+    <string name="recent">Son ziyaret edilenler</string>
+    <string name="start_footer">OK\'a basılı tut: kaydırma · Kırmızı: imleç aç/kapat · Menü tuşu: seçenekler</string>
+
+    <string name="history">Geçmiş</string>
+    <string name="history_empty">Geçmiş boş</string>
+    <string name="clear_history">Geçmişi temizle</string>
+    <string name="history_cleared">Geçmiş temizlendi</string>
+    <string name="downloads">İndirilenler</string>
+    <string name="downloads_empty">Henüz indirme yok</string>
+    <string name="help">Yardım</string>
+    <string name="exit">Çıkış</string>
+    <string name="address_menu">Adres yaz / ara</string>
+
+    <string name="bookmark_add">Yer işaretine ekle</string>
+    <string name="bookmark_remove">Yer işaretinden kaldır</string>
+    <string name="bookmark_added">Yer işaretlerine eklendi</string>
+    <string name="bookmark_removed">Yer işaretlerinden kaldırıldı</string>
+    <string name="open">Aç</string>
+    <string name="remove">Kaldır</string>
+    <string name="move_first">Başa taşı</string>
+
+    <string name="mode_desktop">Bu sitede masaüstü görünüm</string>
+    <string name="mode_mobile">Bu sitede mobil görünüm</string>
+    <string name="to_mobile">Mobil görünüme geç (bu site)</string>
+    <string name="to_desktop">Masaüstü görünüme geç (bu site)</string>
+    <string name="zoom_level">Yakınlık %%%1$d</string>
+    <string name="zoom_reset">Yakınlığı sıfırla</string>
+    <string name="zoom_limit">Daha fazla uzaklaşmıyor (sayfa zaten sığıyor)</string>
+    <string name="text_bigger">Yazıyı büyüt</string>
+    <string name="text_smaller">Yazıyı küçült</string>
+    <string name="text_size">Yazı boyu %%%1$d</string>
+
+    <string name="cursor_on">İmleç açık: oklar taşır, OK tıklar</string>
+    <string name="cursor_off">İmleç kapalı: oklar bağlantılar arasında gezer</string>
+    <string name="cursor_toggle_on">İmleci aç</string>
+    <string name="cursor_toggle_off">İmleci kapat (bağlantılar arasında gez)</string>
+    <string name="scroll_on">Kaydırma modu: oklar sayfayı kaydırır, OK ile çık</string>
+    <string name="scroll_off">İmleç modu</string>
+
+    <string name="ssl_title">Sertifika sorunu</string>
+    <string name="ssl_msg">%1$s sitesinin güvenlik sertifikası geçersiz (eski sitelerde sık olur). Yine de açılsın mı?</string>
+    <string name="ssl_continue">Yine de aç</string>
+
+    <string name="download_title">Dosya indirilsin mi?</string>
+    <string name="download">İndir</string>
+    <string name="download_started">İndiriliyor: %1$s</string>
+    <string name="download_done">İndirme bitti: %1$s</string>
+    <string name="download_failed">İndirme başarısız: %1$s</string>
+    <string name="download_unsupported">Bu indirme türü desteklenmiyor</string>
+    <string name="status_running">iniyor</string>
+    <string name="status_done">bitti</string>
+    <string name="status_failed">başarısız</string>
+    <string name="no_app">Bunu açacak uygulama yok</string>
+    <string name="crashed">Sayfa çöktü, yeniden yükleniyor…</string>
+
+    <string name="help_text">• Ok tuşları: imleci taşır (basılı tutunca hızlanır)\n• OK: tıklar\n• OK\'a basılı tut: kaydırma modu (oklar sayfayı kaydırır; OK veya Geri ile çık)\n• Geri: önceki sayfa\n• İmleç en üstteyken Yukarı: üst çubuk\n• Kanal +/−: sayfa yukarı / aşağı\n• Kırmızı: imleç aç/kapat · Yeşil: uzaklaştır · Sarı: yakınlaştır · Mavi: masaüstü/mobil\n• Menü tuşu: menü\n• Yer işareti kutusunda OK\'a basılı tut: kaldır</string>
+</resources>

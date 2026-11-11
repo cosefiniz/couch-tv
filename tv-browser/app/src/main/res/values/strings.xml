@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TV Browser</string>
+    <string name="back">Back</string>
+    <string name="forward">Forward</string>
+    <string name="reload">Reload</string>
+    <string name="home">Start page</string>
+    <string name="star">Bookmark this page</string>
+    <string name="mode">Desktop / mobile view</string>
+    <string name="zoom_in">Zoom in</string>
+    <string name="zoom_out">Zoom out</string>
+    <string name="cursor">Cursor on / off</string>
+    <string name="menu">Menu</string>
+
+    <string name="address_hint">Search or type an address</string>
+    <string name="address_title">Address or search</string>
+    <string name="go">Go</string>
+    <string name="cancel">Cancel</string>
+    <string name="search_tile">Search or type a web address</string>
+    <string name="search_tile_sub">Opens the on-screen keyboard</string>
+    <string name="bookmarks">Bookmarks</string>
+    <string name="bookmarks_empty">On a page, press the star to add it here.</string>
+    <string name="recent">Recently visited</string>
+    <string name="start_footer">Hold OK: scroll mode · Red: cursor on/off · Menu key: options</string>
+
+    <string name="history">History</string>
+    <string name="history_empty">History is empty</string>
+    <string name="clear_history">Clear history</string>
+    <string name="history_cleared">History cleared</string>
+    <string name="downloads">Downloads</string>
+    <string name="downloads_empty">No downloads yet</string>
+    <string name="help">Help</string>
+    <string name="exit">Exit</string>
+    <string name="address_menu">Type address / search</string>
+
+    <string name="bookmark_add">Add bookmark</string>
+    <string name="bookmark_remove">Remove bookmark</string>
+    <string name="bookmark_added">Added to bookmarks</string>
+    <string name="bookmark_removed">Removed from bookmarks</string>
+    <string name="open">Open</string>
+    <string name="remove">Remove</string>
+    <string name="move_first">Move to front</string>
+
+    <string name="mode_desktop">Desktop view for this site</string>
+    <string name="mode_mobile">Mobile view for this site</string>
+    <string name="to_mobile">Switch to mobile view (this site)</string>
+    <string name="to_desktop">Switch to desktop view (this site)</string>
+    <string name="zoom_level">Zoom %1$d%%</string>
+    <string name="zoom_reset">Reset zoom</string>
+    <string name="zoom_limit">Cannot zoom out further (page already fits)</string>
+    <string name="text_bigger">Larger text</string>
+    <string name="text_smaller">Smaller text</string>
+    <string name="text_size">Text size %1$d%%</string>
+
+    <string name="cursor_on">Cursor on: arrows move, OK clicks</string>
+    <string name="cursor_off">Cursor off: arrows jump between links</string>
+    <string name="cursor_toggle_on">Turn cursor on</string>
+    <string name="cursor_toggle_off">Turn cursor off (link navigation)</string>
+    <string name="scroll_on">Scroll mode: arrows scroll the page, OK exits</string>
+    <string name="scroll_off">Cursor mode</string>
+
+    <string name="ssl_title">Certificate problem</string>
+    <string name="ssl_msg">The security certificate of %1$s is not valid (this is common on old sites). Open anyway?</string>
+    <string name="ssl_continue">Open anyway</string>
+
+    <string name="download_title">Download this file?</string>
+    <string name="download">Download</string>
+    <string name="download_started">Downloading: %1$s</string>
+    <string name="download_done">Download finished: %1$s</string>
+    <string name="download_failed">Download failed: %1$s</string>
+    <string name="download_unsupported">This kind of download is not supported</string>
+    <string name="status_running">downloading</string>
+    <string name="status_done">done</string>
+    <string name="status_failed">failed</string>
+    <string name="no_app">No app can open this</string>
+    <string name="crashed">The page crashed, reloading…</string>
+
+    <string name="help_text">• Arrow keys: move the cursor (hold to speed up)\n• OK: click\n• Hold OK: scroll mode (arrows scroll the page; OK or Back exits)\n• Back: previous page\n• Cursor at the top + Up: toolbar\n• Channel +/−: page up / down\n• Red: cursor on/off · Green: zoom out · Yellow: zoom in · Blue: desktop/mobile\n• Menu key: menu\n• On a bookmark tile, hold OK to remove it</string>
+</resources>
