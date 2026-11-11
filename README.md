@@ -1,5 +1,9 @@
 # couch-tv
 
+> **This fork:** couch-tv plus a phone app, a TV helper (seek bar, red button = last channel), a
+> stick guard and a TV browser, built for a family Google TV with the bridge on a 4G modem stick.
+> See [SALON-TV.md](SALON-TV.md). Everything else is [Seagey/couch-tv](https://github.com/Seagey/couch-tv).
+
 Your own home screen and phone remote for a Google TV, and now a Samsung TV, and an LG
 version that has run on five real LGs so far. No ads on the home screen. Open source (MIT).
 
