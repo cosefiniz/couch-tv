@@ -399,8 +399,10 @@ def configure_helper():
     debugging back on after the next restart (the grant survives restarts and updates; this only
     puts it back if someone took it away)."""
     global configured_boot, seen_boot
-    boot = sh("cat /proc/sys/kernel/random/boot_id")
-    if not boot or "error" in boot or boot == configured_boot:
+    m = re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                  sh("cat /proc/sys/kernel/random/boot_id"))
+    boot = m.group(0) if m else None   # just the id: adb can add its own lines around it
+    if not boot or boot == configured_boot:
         return
     if boot != seen_boot:
         if seen_boot is not None:
