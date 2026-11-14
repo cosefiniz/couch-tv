@@ -717,7 +717,9 @@
   }
 
   function applySunSync() {
-    if (!NIGHT || !SUN_SYNC || !SCENES.length) return;
+    // clock() runs once before buildScenes() at start: with no scene drawn yet there is nothing to
+    // switch (and readyScene would throw, leaving the Night look black with no clock)
+    if (!NIGHT || !SUN_SYNC || !SCENES.length || sceneEls.length !== SCENES.length) return;
     var targetId = sunTargetScene();
     var idx = SCENES.map(function (s) { return s.id; }).indexOf(targetId);
     if (idx >= 0 && idx !== scene) {
