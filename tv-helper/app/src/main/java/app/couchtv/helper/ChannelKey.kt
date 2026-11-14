@@ -29,6 +29,10 @@ class ChannelKey : AccessibilityService() {
 
     override fun onServiceConnected() {
         Log.i(TAG, "connected")
+        getSharedPreferences("helper", 0).edit().putBoolean("channel_key_on", true).apply()
+        // Android binds this service early at every start, before most boot broadcasts: the
+        // surest moment to get Wireless debugging back on (Keeper.kt).
+        Keeper.kick(this, "accessibility")
     }
 
     override fun onKeyEvent(e: KeyEvent): Boolean {

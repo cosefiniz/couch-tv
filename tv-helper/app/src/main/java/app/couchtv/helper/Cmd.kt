@@ -35,8 +35,13 @@ class Cmd : BroadcastReceiver() {
                 "app.couchtv.helper.SEEK" -> seek(c, i.getStringExtra("pkg"), i.getLongExtra("pos", -1))
                 "app.couchtv.helper.ICON" -> icon(c, i.getStringExtra("pkg") ?: "", i.getIntExtra("size", 128))
                 "app.couchtv.helper.CONFIG" -> {
-                    c.getSharedPreferences("helper", 0).edit().putString("hub", i.getStringExtra("hub")).apply()
-                    JSONObject().put("ok", true)
+                    val ed = c.getSharedPreferences("helper", 0).edit()
+                    i.getStringExtra("hub")?.let { ed.putString("hub", it) }
+                    if (i.hasExtra("keep_adb")) ed.putBoolean("keep_adb", i.getBooleanExtra("keep_adb", true))
+                    ed.commit()
+                    Keeper.kick(c, "config")
+                    JSONObject().put("ok", true).put("keep_adb", Keeper.canWrite(c) &&
+                        c.getSharedPreferences("helper", 0).getBoolean("keep_adb", true))
                 }
                 else -> JSONObject().put("ok", false).put("error", "unknown command")
             }

@@ -11,8 +11,8 @@ nothing in them is tied to that TV or that stick.
 | Folder | What it is |
 |---|---|
 | [`phone-app/`](phone-app/) | **Salon TV**, an Android app for the phone remote: couch-tv's web remote full screen, the phone's volume buttons change the TV's volume, a "TV power" quick settings tile, notifications from the stick, light mode for old phones (tested on a Samsung J7 Prime), and updates in place from the stick (`deploy.sh` builds and publishes). |
-| [`tv-helper/`](tv-helper/) | A tiny TV app with no screen. With notification access it reads the playing app's position and length and seeks it (a draggable seek bar on the phone, YouTube tested), and hands out app icons. With accessibility on, the **red button flips between the last two channels** on Live TV (the TV understands `KEYCODE_LAST_CHANNEL`, its remote has no such button). |
-| [`stick-guard/`](stick-guard/) | A small Python service next to the bridge: reopens ADB port 5555 after a power cut (once Wireless debugging is on, no pairing code), puts couch-tv in front after a boot, picks a shared profile on "Who's watching?" (TV+, Prime Video), a 03:00 sleep guard, and the app hub on port 5401 (download page, updates, notifications, media and seek for the phone). systemd units in `systemd/` wait for the clock (`time-sync.target`), for boxes with no RTC. |
+| [`tv-helper/`](tv-helper/) | A tiny TV app with no screen. With notification access it reads the playing app's position and length and seeks it (a draggable seek bar on the phone, YouTube tested), and hands out app icons. With WRITE_SECURE_SETTINGS granted it **switches Wireless debugging back on after every restart** (this TV forgets it), so the stick can always get back in. With accessibility on, the **red button flips between the last two channels** on Live TV (the TV understands `KEYCODE_LAST_CHANNEL`, its remote has no such button). |
+| [`stick-guard/`](stick-guard/) | A small Python service next to the bridge: reopens ADB port 5555 within seconds of a restart (it listens for the TV's Wireless debugging announcement; no pairing code), puts couch-tv in front whenever the TV comes back with the Google TV home showing (never over live TV or an app), picks a shared profile on "Who's watching?" (TV+, Prime Video), a 03:00 sleep guard, and the app hub on port 5401 (download page, updates, notifications, media and seek for the phone). systemd units in `systemd/` wait for the clock (`time-sync.target`), for boxes with no RTC. |
 | [`tv-browser/`](tv-browser/) | **TV Tarayıcı**, a remote-friendly web browser: desktop layout for old sites, a D-pad mouse cursor, zoom. |
 | [`remote/`](remote/) | couch-tv's phone remote, changed: builds for older phone browsers, the Watch tab lists every app on the TV in the TV home's order (Live TV and the rest), and Now playing gets the seek bar. |
 
@@ -55,8 +55,9 @@ Bir ailenin Grundig 55GQ750A Google TV'si için, köprü **Debian'a çevrilmiş 
   güncelleme.
 - **TV yardımcısı** (`tv-helper/`): telefonda sürüklenebilir zaman çubuğu (YouTube'da denendi),
   İzle sekmesinde TV'deki uygulamaların simgeleri, Canlı TV'de **kırmızı tuşla önceki kanal**.
-- **Stick nöbetçisi** (`stick-guard/`): elektrik kesintisinden sonra ADB portunu yeniden açar,
-  açılışta couch-tv'yi öne getirir, "Kim izliyor?"da ortak profili seçer (TV+, Prime Video),
+- **Stick nöbetçisi** (`stick-guard/`): TV yeniden başlayınca ADB portunu saniyeler içinde açar
+  (yardımcı Kablosuz hata ayıklamayı kendisi açar), Google TV paneli öndeyse couch-tv'yi getirir
+  (canlı TV'ye ve açık uygulamalara dokunmaz), "Kim izliyor?"da ortak profili seçer (TV+, Prime Video),
   gece 03:00 uyuyakalma koruması, 5401 portunda uygulama dağıtımı ve bildirimler.
 - **TV Tarayıcı** (`tv-browser/`): eski siteler için masaüstü düzeni, kumandayla fare imleci.
 

@@ -3,9 +3,12 @@
 Linux box (here a 4G USB modem stick running Debian). Runs as couch-tv-adb-guard.service.
 
 1. Port 5555 closed after a full TV restart and the TV announces Wireless debugging: find its port
-   over mDNS, `adb connect` (this computer is already trusted, no code) and `adb tcpip 5555`.
-2. Once per TV boot, when ADB works and the Google TV home is in front: start couch-tv.
-   Never covers live TV, HDMI or any other app.
+   over mDNS (a browser that runs all the time, so it is seen within seconds), `adb connect` (this
+   computer is already trusted, no code) and `adb tcpip 5555`. The TV helper app switches Wireless
+   debugging back on by itself after each restart (tv-helper Keeper.kt).
+2. Whenever the stick (re)connects, the screen comes on, or the Google TV home comes forward, and
+   the Google TV home is still in front two seconds later: start couch-tv. Never covers live TV,
+   HDMI or any other app.
 3. "Who's watching?" in TV+ and Prime Video: picks one shared profile (config "profile").
    Listens to the TV's activity events (no polling); acts once per time the app comes forward.
 4. Power cut: the TV is up but ADB stays closed for 3 minutes -> a notification for the phone app
@@ -45,7 +48,9 @@ TV = CFG.get("tv_ip") or ""
 FIXED = int(CFG.get("adb_port", 5555))
 S = f"{TV}:{FIXED}"
 HOME_ACT = "app.couchtv.launcher/.MainActivity"
-GOOGLE_HOME = "com.google.android.apps.tv.launcherx/.home.HomeActivity"
+# The Google TV home itself (not its profile, account or settings screens).
+GOOGLE_HOMES = ("com.google.android.apps.tv.launcherx/.home.HomeActivity",
+                "com.google.android.apps.tv.launcherx/.home.VanillaModeHomeActivity")
 
 # "Who's watching?": the shared profile's name (empty = leave every profile screen alone).
 PROFILE = (CFG.get("profile") or "").strip().lower()
@@ -64,11 +69,13 @@ NIGHT_ON = _night.get("enabled", True)
 NIGHT_FROM, NIGHT_TO, IDLE_MIN = int(_night.get("from", 3)), int(_night.get("to", 6)), int(_night.get("idle_minutes", 60))
 ALERT_AFTER = 180                               # seconds the TV is up with ADB closed
 
-done_boot = None
 configured_boot = None
+seen_boot = None
 night_done = None
 down_since = None
 alerted = False
+connected = False
+wake = threading.Event()          # set to run the main loop at once (TV announced, screen on)
 
 
 def log(*a):
@@ -316,6 +323,39 @@ def my_ip():
 
 
 # ---------- 1. keep 5555 open ----------
+tls_port = None                   # the TV's current Wireless debugging port, from the browser below
+
+
+def browse_wireless():
+    """Listens for the TV's Wireless debugging announcement all the time, so a TV that just
+    restarted is reconnected within seconds instead of at the next poll."""
+    class L:
+        def add_service(self, zc, t, name):
+            global tls_port
+            info = zc.get_service_info(t, name, 3000)
+            if info and TV in info.parsed_addresses():
+                if tls_port != info.port:
+                    log("Kablosuz hata ayiklama duyuruldu, port", info.port)
+                tls_port = info.port
+                wake.set()
+        update_service = add_service
+
+        def remove_service(self, zc, t, name):
+            global tls_port
+            tls_port = None
+
+    while True:
+        zc = Zeroconf()
+        try:
+            ServiceBrowser(zc, "_adb-tls-connect._tcp.local.", L())
+            time.sleep(6 * 3600)  # start afresh now and then, in case the network changed
+        except Exception as e:
+            log("mDNS hatasi:", e)
+            time.sleep(30)
+        finally:
+            zc.close()
+
+
 def wireless_port(wait=6):
     found = []
 
@@ -339,43 +379,73 @@ def wireless_port(wait=6):
 
 
 def reopen_5555():
-    p = wireless_port()
+    p = tls_port or wireless_port(3)
     if not p:
         return False
     log("5555 kapali, Kablosuz hata ayiklama portu", p, "-> 5555 aciliyor")
     log(adb("connect", f"{TV}:{p}"))
     log(adb("-s", f"{TV}:{p}", "tcpip", str(FIXED)))
-    time.sleep(4)
+    for _ in range(10):
+        time.sleep(1)
+        if port_open(FIXED):
+            break
     adb("disconnect", f"{TV}:{p}")
     return port_open(FIXED)
 
 
-# ---------- 2. couch-tv in front after a boot, and the helper told where the hub is ----------
+# ---------- 2. couch-tv in front, and the helper told where the hub is ----------
 def configure_helper():
-    global configured_boot
+    """Once per TV boot: tell the helper where the hub is, and make sure it may switch Wireless
+    debugging back on after the next restart (the grant survives restarts and updates; this only
+    puts it back if someone took it away)."""
+    global configured_boot, seen_boot
     boot = sh("cat /proc/sys/kernel/random/boot_id")
     if not boot or "error" in boot or boot == configured_boot:
         return
+    if boot != seen_boot:
+        if seen_boot is not None:
+            log("TV yeniden basladi")
+        seen_boot = boot
+    sh("pm grant app.couchtv.helper android.permission.WRITE_SECURE_SETTINGS")
     ip = my_ip()
     if ip and "result=1" in sh(f"am broadcast -f 32 -n app.couchtv.helper/.Cmd -a app.couchtv.helper.CONFIG --es hub {ip}:{HUB_PORT}"):
         log("yardimci ayarlandi:", f"{ip}:{HUB_PORT}")
         configured_boot = boot
 
 
-def boot_home():
-    global done_boot
-    boot = sh("cat /proc/sys/kernel/random/boot_id")
-    if not boot or "error" in boot or boot == done_boot:
+_home_lock = threading.Lock()
+_home_last = 0.0
+
+
+def google_home_in_front():
+    top = sh("dumpsys activity activities | grep -m1 topResumedActivity", timeout=8)
+    return any(h in top for h in GOOGLE_HOMES)
+
+
+def bring_couch_tv(reason, delay=0):
+    """couch-tv in front if the Google TV home is, and still is two seconds later (the TV's own
+    Home button watch usually gets there first; this is the stick's backup). Anything else in
+    front (live TV, HDMI, YouTube, Settings) is left alone."""
+    global _home_last
+    if delay:
+        time.sleep(delay)
+    if not _home_lock.acquire(blocking=False):
         return
-    top = sh("dumpsys activity activities | grep -m1 topResumedActivity")
-    if GOOGLE_HOME in top:
-        log("Google TV paneli onde, couch-tv aciliyor")
+    try:
+        if time.time() - _home_last < 5 or not google_home_in_front():
+            return
+        time.sleep(2)
+        if not google_home_in_front():
+            return
         sh(f"am start -n {HOME_ACT}")
-        done_boot = boot
-    elif "com.android.tv.settings/" in top:
-        return             # Settings open (e.g. switching Wireless debugging on): wait for the home
-    elif "topResumedActivity" in top:
-        done_boot = boot   # something else (couch-tv, live TV, an app) is in front: leave it
+        _home_last = time.time()
+        log(f"Google TV paneli onde ({reason}), couch-tv acildi")
+    finally:
+        _home_lock.release()
+
+
+def bring_later(reason, delay):
+    threading.Thread(target=bring_couch_tv, args=(reason, delay), daemon=True).start()
 
 
 # ---------- 3. "who's watching" -> tv ----------
@@ -445,14 +515,21 @@ def watch_events():
     busy = set()
     while True:
         if not port_open(FIXED):
-            time.sleep(20)
+            time.sleep(3)
             continue
         adb("connect", S)
         p = subprocess.Popen(["adb", "-s", S, "logcat", "-b", "events", "-T", "1", "-v", "brief"],
                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
         try:
             for line in p.stdout:
+                if "screen_toggled: 1" in line:
+                    # woke from standby: whatever the TV puts on screen first, look a moment later
+                    bring_later("ekran acildi", 3)
+                    continue
                 if "wm_set_resumed_activity" not in line:
+                    continue
+                if any(h in line for h in GOOGLE_HOMES):
+                    bring_later("ana ekran", 0)
                     continue
                 for act, fn in ((TVPLUS_PICKER, pick_tvplus), (PRIME_ACT, pick_prime)):
                     if act in line and act not in busy:
@@ -467,7 +544,7 @@ def watch_events():
                         threading.Thread(target=run, daemon=True).start()
         finally:
             p.kill()
-        time.sleep(10)
+        time.sleep(3)
 
 
 # ---------- 5. sleep protection ----------
@@ -497,30 +574,40 @@ def night_check():
 
 # ---------- main loop ----------
 def tick():
-    global down_since, alerted
+    """One look at the TV. True when it is up and reachable over ADB."""
+    global down_since, alerted, connected
     if not pings():
         down_since = None          # TV off or asleep: nothing to do
-        return
+        if connected:
+            log("TV agdan cikti (bekleme)")
+        connected = False
+        return False
     if not port_open(FIXED):
+        connected = False
         if reopen_5555():
             pass
         else:
             down_since = down_since or time.time()
             if not alerted and time.time() - down_since > ALERT_AFTER:
                 notify("TV: Kablosuz hata ayıklamayı açın",
-                       "TV yeniden başladı (elektrik kesintisi?). TV'de: Ayarlar → Sistem → "
+                       "TV yeniden başladı ve stick bağlanamadı. TV'de: Ayarlar → Sistem → "
                        "Geliştirici seçenekleri → Kablosuz hata ayıklama → Aç. Kod gerekmez.", "warning")
                 alerted = True
-            return
+            return False
     down_since = None
     if "connected" not in adb("connect", S):
-        return
+        return False
+    if not connected:
+        connected = True
+        log("TV'ye baglanildi")
+        configure_helper()
+        bring_couch_tv("baglanti")
     if alerted:
         notify("TV hazır", "Bağlantı geri geldi, telefon kumandası tam çalışıyor.", "white_check_mark")
         alerted = False
-    boot_home()
     configure_helper()
     night_check()
+    return True
 
 
 if not TV:
@@ -528,9 +615,14 @@ if not TV:
 log("couch-tv guard basladi, TV", TV)
 threading.Thread(target=watch_events, daemon=True).start()
 threading.Thread(target=serve_hub, daemon=True).start()
+threading.Thread(target=browse_wireless, daemon=True).start()
 while True:
     try:
-        tick()
+        ok = tick()
     except Exception as e:
         log("hata:", e)
-    time.sleep(30)
+        ok = False
+    # Every 3 seconds while the TV is away or closed, so a TV coming back is caught at once;
+    # every 15 seconds once it is reachable. An mDNS announcement wakes the loop straight away.
+    wake.wait(15 if ok else 3)
+    wake.clear()
