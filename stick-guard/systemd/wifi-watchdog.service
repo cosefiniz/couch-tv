@@ -1,0 +1,19 @@
+# Keeps the stick on the home Wi-Fi (wifi-watchdog.sh next to guard.py). Copy the script to
+# /usr/local/sbin/wifi-watchdog (chmod 755) and this file to /etc/systemd/system/, then:
+#   sudo systemctl daemon-reload && sudo systemctl enable --now wifi-watchdog
+# WIFI_CON names the NetworkManager connection (empty: the first Wi-Fi one).
+[Unit]
+Description=Wi-Fi watchdog (reconnects, restarts Wi-Fi, reboots as a last resort)
+Wants=NetworkManager.service
+After=NetworkManager.service
+
+[Service]
+Environment=WIFI_IF=wlan0
+Environment=WIFI_CON=
+ExecStart=/usr/local/sbin/wifi-watchdog
+Restart=always
+RestartSec=10
+MemoryMax=20M
+
+[Install]
+WantedBy=multi-user.target
