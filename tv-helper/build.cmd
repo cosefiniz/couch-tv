@@ -1,9 +1,9 @@
 @echo off
 rem Builds the TV helper app with a JDK 21 / Android SDK / Gradle kept in a tools folder (no system
-rem install). COUCHTV_TOOLS points at it; by default the one next to the repo, ..\..\tv-browser\tools.
+rem install). COUCHTV_TOOLS points at it; by default ..\..\android-tools, next to the repo.
 setlocal
 set "HERE=%~dp0"
-if "%COUCHTV_TOOLS%"=="" set "COUCHTV_TOOLS=%HERE%..\..\tv-browser\tools"
+if "%COUCHTV_TOOLS%"=="" set "COUCHTV_TOOLS=%HERE%..\..\android-tools"
 set "JAVA_HOME=%COUCHTV_TOOLS%\jdk-21.0.13+9"
 set "ANDROID_HOME=%COUCHTV_TOOLS%\android-sdk"
 set "GRADLE_USER_HOME=%COUCHTV_TOOLS%\gradle-home"
