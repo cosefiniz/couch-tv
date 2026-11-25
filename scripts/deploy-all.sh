@@ -16,13 +16,13 @@
 #
 #   scripts/deploy-all.sh [--dry-run] [--no-publish]
 # Settings come from phone-app/deploy.env (git-ignored): STICK=user@<stick>, TV_IP=<tv>, optionally
-# WORK=phone-app PUBLIC=salon-tv PUBLIC_REMOTE=fork BACKUP_REMOTE=yedek.
+# WORK=phone-app PUB_BRANCH=salon-tv PUB_REMOTE=fork BACKUP_REMOTE=yedek.
 set -euo pipefail
 ROOT=$(git rev-parse --show-toplevel); cd "$ROOT"
 [ -f phone-app/deploy.env ] && . phone-app/deploy.env
 STICK=${STICK:?set STICK=user@your-stick in phone-app/deploy.env}
 TV_IP=${TV_IP:-}
-WORK=${WORK:-phone-app}; PUBLIC=${PUBLIC:-salon-tv}; PUBLIC_REMOTE=${PUBLIC_REMOTE:-fork}; BACKUP_REMOTE=${BACKUP_REMOTE:-yedek}
+WORK=${WORK:-phone-app}; PUB_BRANCH=${PUB_BRANCH:-salon-tv}; PUB_REMOTE=${PUB_REMOTE:-fork}; BACKUP_REMOTE=${BACKUP_REMOTE:-yedek}
 DRY=0; PUBLISH=1
 for a in "$@"; do case "$a" in --dry-run) DRY=1 ;; --no-publish) PUBLISH=0 ;; *) echo "unknown: $a"; exit 2 ;; esac; done
 say() { printf '\n== %s\n' "$*"; }
@@ -38,15 +38,15 @@ echo "  stick $STICK, TV $TV_IP"
 
 if [ "$PUBLISH" = 1 ]; then
   say "1. publish"
-  NEW=$(git cherry "$PUBLIC" "$WORK" | awk '/^\+/{print $2}')
+  NEW=$(git cherry "$PUB_BRANCH" "$WORK" | awk '/^\+/{print $2}')
   if [ -n "$NEW" ]; then
-    echo "  to $PUBLIC: $(echo "$NEW" | wc -l) commit(s)"
-    do_ git checkout -q "$PUBLIC"
+    echo "  to $PUB_BRANCH: $(echo "$NEW" | wc -l) commit(s)"
+    do_ git checkout -q "$PUB_BRANCH"
     for c in $NEW; do do_ git cherry-pick "$c" > /dev/null; done
-    do_ git push -q "$PUBLIC_REMOTE" "$PUBLIC"
+    do_ git push -q "$PUB_REMOTE" "$PUB_BRANCH"
     do_ git checkout -q "$WORK"
   else
-    echo "  $PUBLIC is up to date"
+    echo "  $PUB_BRANCH is up to date"
   fi
   do_ git push -q "$BACKUP_REMOTE" "$WORK"
 fi

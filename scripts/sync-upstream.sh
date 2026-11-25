@@ -9,19 +9,19 @@
 set -euo pipefail
 ROOT=$(git rev-parse --show-toplevel); cd "$ROOT"
 [ -f phone-app/deploy.env ] && . phone-app/deploy.env
-WORK=${WORK:-phone-app}; PUBLIC=${PUBLIC:-salon-tv}; PUBLIC_REMOTE=${PUBLIC_REMOTE:-fork}; BACKUP_REMOTE=${BACKUP_REMOTE:-yedek}
+WORK=${WORK:-phone-app}; PUB_BRANCH=${PUB_BRANCH:-salon-tv}; PUB_REMOTE=${PUB_REMOTE:-fork}; BACKUP_REMOTE=${BACKUP_REMOTE:-yedek}
 DRY=0; [ "${1:-}" = "--dry-run" ] && DRY=1
 [ "$(git branch --show-current)" = "$WORK" ] || { echo "switch to $WORK first"; exit 1; }
 git diff --quiet && git diff --cached --quiet || { echo "commit or stash your changes first"; exit 1; }
 
 git fetch -q origin main
-N=$(git rev-list --count "$PUBLIC..origin/main")
-if [ "$N" = 0 ]; then echo "couch-tv has nothing new for $PUBLIC."; exit 0; fi
+N=$(git rev-list --count "$PUB_BRANCH..origin/main")
+if [ "$N" = 0 ]; then echo "couch-tv has nothing new for $PUB_BRANCH."; exit 0; fi
 echo "couch-tv has $N new commit(s):"
-git log --format='  %h %s' "$PUBLIC..origin/main"
+git log --format='  %h %s' "$PUB_BRANCH..origin/main"
 echo "Files they touch that we changed too (watch these):"
-comm -12 <(git diff --name-only "$(git merge-base "$PUBLIC" origin/main)" origin/main | sort) \
-         <(git diff --name-only origin/main "$PUBLIC" | sort) | sed 's/^/  /' || true
+comm -12 <(git diff --name-only "$(git merge-base "$PUB_BRANCH" origin/main)" origin/main | sort) \
+         <(git diff --name-only origin/main "$PUB_BRANCH" | sort) | sed 's/^/  /' || true
 [ "$DRY" = 1 ] && { echo "(dry-run: nothing merged)"; exit 0; }
 
 merge() {   # $1 = branch
@@ -35,7 +35,7 @@ merge() {   # $1 = branch
   fi
 }
 merge "$WORK"
-merge "$PUBLIC"
+merge "$PUB_BRANCH"
 git checkout -q "$WORK"
-echo "Merged into $WORK and $PUBLIC. Rebuild what couch-tv changed and publish with scripts/deploy-all.sh"
+echo "Merged into $WORK and $PUB_BRANCH. Rebuild what couch-tv changed and publish with scripts/deploy-all.sh"
 echo "(the TV home app itself updates from couch-tv's Releases, asked on the TV)."
