@@ -44,6 +44,12 @@ if [ "$PUBLISH" = 1 ]; then
   # each publish; set it once by hand when starting: git config salon.published <commit>).
   MARK=$(git config --get salon.published || true)
   [ -n "$MARK" ] || { echo "set the last published $WORK commit first: git config salon.published <commit>"; exit 1; }
+  # A merge (sync-upstream.sh) is not cherry-picked: it would bring every couch-tv commit one by
+  # one. sync-upstream.sh merges both branches itself; after it, mark the merge as published.
+  if [ -n "$(git rev-list --merges "$MARK..$WORK")" ]; then
+    echo "  $WORK has a merge since the last publish: push $PUB_BRANCH and $WORK yourself, then"
+    echo "  git config salon.published \$(git rev-parse $WORK)   (see sync-upstream.sh)"; exit 1
+  fi
   NEW=$(git rev-list --reverse "$MARK..$WORK")
   if [ -n "$NEW" ]; then
     echo "  to $PUB_BRANCH: $(echo "$NEW" | wc -l) commit(s)"
@@ -87,6 +93,11 @@ while IFS='|' read -r src dst mode act; do
 done <<< "$SYNC"
 echo "$CHANGED" | grep -q '^stick-guard/guard.py$' && ACTIONS="$ACTIONS guard"
 echo "$CHANGED" | grep -q '^bridge/' && ACTIONS="$ACTIONS bridge"
+# new Python packages (a couch-tv update can add some) go in before the bridge restarts on the new code
+if echo "$CHANGED" | grep -q '^bridge/requirements.txt$'; then
+  echo "  bridge/requirements.txt changed: pip install"
+  do_ 'on_stick "cd ~/couch-tv && .venv/bin/pip install -q -r bridge/requirements.txt"'
+fi
 case "$ACTIONS" in *reexec*) do_ 'on_stick "sudo systemctl daemon-reexec"' ;; *reload*) do_ 'on_stick "sudo systemctl daemon-reload"' ;; esac
 case "$ACTIONS" in *aptclean*) do_ 'on_stick "sudo apt-get clean"' ;; esac
 case "$ACTIONS" in *backup*) do_ 'on_stick "sudo systemctl enable --now couch-tv-backup.timer"' ;; esac
