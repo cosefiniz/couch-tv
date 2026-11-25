@@ -72,13 +72,14 @@ RULES=(
   "home-network-hostname|[A-Za-z0-9-]+\.(lan|home\.arpa|ts\.net)([^A-Za-z0-9.-]|$)"
 )
 # Text that is allowed to match (placeholders and public noreply addresses). Per line, extended regex.
-ALLOW='users\.noreply\.github\.com|@example\.(com|org)|your-computer\.local|homeassistant\.local|my-computer\.local|example\.local|<your-computer>\.local|x@y\.z|@types/|@vitejs/|@rolldown/|@oxc-project/|@emnapi/|@napi-rs/|@tybys/|@babel/|@esbuild/|@rollup/|@img/|\.local\.(plist|service)|_tcp\.local\.'
+ALLOW='users\.noreply\.github\.com|@example\.(com|org)|your-computer\.local|homeassistant\.local|my-computer\.local|example\.local|<your-computer>\.local|x@y\.z|@types/|@vitejs/|@rolldown/|@oxc-project/|@emnapi/|@napi-rs/|@tybys/|@babel/|@esbuild/|@rollup/|@img/|\.local\.(plist|service)|_tcp\.local\.|@[23]x\.(jpg|png|webp)'
 
 echo "== 2. generic checks (private addresses, emails, phones, paths)"
 for rule in "${RULES[@]}"; do
   name="${rule%%|*}"; re="${rule#*|}"
-  # package-lock.json is machine written: only check it for the rules that cannot match a hash.
-  hits=$(grep -rInE "${EXCL[@]}" --exclude=privacy-scan.sh "$re" . 2> /dev/null | grep -vE "$ALLOW" | grep -vE '^\./remote/package-lock\.json:[0-9]+:.*(integrity|resolved)' | cut -d: -f1,2)
+  # package-lock.json is machine written: only check it for the rules that cannot match a hash. The same for the
+  # pip hash lines in setup-app/requirements*.txt (a line that is only "--hash=sha256:" and 64 hex digits).
+  hits=$(grep -rInE "${EXCL[@]}" --exclude=privacy-scan.sh "$re" . 2> /dev/null | grep -vE "$ALLOW" | grep -vE '^\./remote/package-lock\.json:[0-9]+:.*(integrity|resolved)' | grep -vE '^\./setup-app/requirements[a-z-]*\.txt:[0-9]+:[[:space:]]+--hash=sha256:[0-9a-f]{64}( \\)?$' | cut -d: -f1,2)
   if [ -n "$hits" ]; then
     while IFS= read -r h; do note "$name  $h"; done <<< "$hits"
   fi
@@ -90,7 +91,8 @@ if [ "$HAS_GIT" = 1 ]; then
     awk '/^@@commit /{c=$2; next} /^\+\+\+ b\//{f=substr($0,7); next} /^[+-]/ && !/^(\+\+\+|---) /{print c " " f ": " substr($0,2)}' > "$TMP/history.txt"
   for rule in "${RULES[@]}"; do
     name="${rule%%|*}"; re="${rule#*|}"
-    hits=$(grep -aE "$re" "$TMP/history.txt" | grep -vE "$ALLOW" | cut -d: -f1 | sort -u)
+    # the same hash-line skip as the working tree pass: a pip "--hash=sha256:" line in setup-app/requirements*.txt
+    hits=$(grep -aE "$re" "$TMP/history.txt" | grep -vE "$ALLOW" | grep -vE '^[0-9a-f]+ setup-app/requirements[a-z-]*\.txt: +--hash=sha256:[0-9a-f]{64}( \\)?$' | cut -d: -f1 | sort -u)
     if [ -n "$hits" ]; then
       while IFS= read -r h; do note "$name  git history, commit $h"; done <<< "$hits"
     fi
@@ -109,12 +111,16 @@ if [ -n "$DENYLIST" ]; then
   if [ -f "$DENYLIST" ]; then
     # -a reads binary files as text too, so strings inside images and archives are caught.
     # Pass 1, whole words.
-    words=$(grep -rIaniwF "${EXCL[@]}" --exclude=privacy-scan.sh -f "$DENYLIST" . 2> /dev/null | cut -d: -f1,2 | sort -u)
+    # An optional "<denylist>.allow" file (kept outside the repo, next to the denylist) lists exact text a
+    # line may carry on purpose, such as your own public website address; lines holding it are skipped.
+    DENY_OK="$DENYLIST.allow"
+    allowed() { if [ -f "$DENY_OK" ]; then grep -aviF -f "$DENY_OK"; else cat; fi; }
+    words=$(grep -rIaniwF "${EXCL[@]}" --exclude=privacy-scan.sh -f "$DENYLIST" . 2> /dev/null | allowed | cut -d: -f1,2 | sort -u)
     if [ -n "$words" ]; then
       while IFS= read -r h; do note "denylist  $h"; done <<< "$words"
     fi
     # Pass 2, the same words inside longer words, on lines pass 1 did not already report.
-    parts=$(grep -rIaniF "${EXCL[@]}" --exclude=privacy-scan.sh -f "$DENYLIST" . 2> /dev/null | cut -d: -f1,2 | sort -u)
+    parts=$(grep -rIaniF "${EXCL[@]}" --exclude=privacy-scan.sh -f "$DENYLIST" . 2> /dev/null | allowed | cut -d: -f1,2 | sort -u)
     if [ -n "$parts" ]; then
       while IFS= read -r h; do
         if [ -z "$words" ] || ! grep -qxF "$h" <<< "$words"; then note "denylist-inside-a-word  $h"; fi

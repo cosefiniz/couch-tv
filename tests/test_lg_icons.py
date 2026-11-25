@@ -1,4 +1,5 @@
 """lg/build.py downloads the TV's own icon for a baked app with no bundled logo (#56)."""
+import asyncio
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import os
 from pathlib import Path
@@ -8,15 +9,19 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "lg"))
+sys.path.insert(0, str(Path(__file__).parents[1] / "bridge"))
 import build
+import lg
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\0" * 32
 
 
 class Icons(BaseHTTPRequestHandler):
+    """Like the TV's port 3001: no Content-Type, the bytes are the only clue."""
     def do_GET(self):
         body = b"<html>not an icon</html>" if self.path == "/page.html" else PNG
         self.send_response(200)
@@ -55,6 +60,22 @@ class FetchTvIcons(unittest.TestCase):
         self.logos_dir = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.logos_dir)
 
+    def bridge_tv(self, icon):
+        t = lg.LGTV({"id": "test", "name": "Test", "kind": "lg", "ip": "127.0.0.1"})
+        t.ip, t._ids_checked = "127.0.0.1", time.time()
+        t.launch_points = [{"id": "com.fubotv.app", "title": "Fubo", "icon": icon}]
+        return t
+
+    def test_bridge_fetches_an_icon_from_the_tv_self_signed_port(self):
+        t = self.bridge_tv(self.base + "/resources/abc/fubo_130x130.png")
+        self.assertEqual(asyncio.run(t.icon("com.fubotv.app")), (PNG, "image/png"))
+
+    def test_bridge_fetches_nothing_off_the_tv(self):
+        for icon in ("https://198.51.100.7:3001/resources/abc/x.png", self.base + "/page.html",
+                     "file:///usr/palm/applications/com.fubotv.app/icon.png"):
+            with self.assertRaises(ValueError):
+                asyncio.run(self.bridge_tv(icon).icon("com.fubotv.app"))
+
     def test_saves_icons_under_the_name_the_app_looks_for(self):
         logos = {"com.netflix.ninja"}
         baked = [
@@ -85,6 +106,61 @@ class FetchTvIcons(unittest.TestCase):
         self.assertEqual(build.fetch_tv_icons(baked, self.logos_dir, logos), 0)
         self.assertEqual(os.listdir(self.logos_dir), [])
         self.assertEqual(logos, set())
+
+
+class LargeIconFirst(unittest.TestCase):
+    """An app with no bundled logo gets the TV's 130x130 largeIcon, not its 80x80 icon (#89):
+    stretched onto a 112 px tile at devicePixelRatio 1 (webOS 26), the small one looks soft."""
+
+    def test_baked_list_prefers_large_icon(self):
+        import json
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "apps.json")
+        with open(path, "w") as f:
+            json.dump([{"id": "plex", "title": "Plex", "icon": "https://tv/Plex_80x80.png",
+                        "largeIcon": "https://tv/Plex_130x130.png"},
+                       {"id": "only-small", "title": "Small", "icon": "https://tv/s_80.png"}], f)
+        apps = {a["id"]: a for a in build.read_apps(path, "")}
+        self.assertEqual(apps["plex"]["icon"], "https://tv/Plex_130x130.png")
+        self.assertEqual(apps["only-small"]["icon"], "https://tv/s_80.png")
+
+
+class AppsTvPairsByItself(unittest.TestCase):
+    """--apps tv with no saved key no longer stops: it pairs on the spot, no bridge needed (#219)."""
+
+    def test_no_key_still_reads_the_list(self):
+        import contextlib
+        import io
+        import lg
+        from unittest import mock
+
+        class FakeTV:
+            def __init__(self, cfg):
+                self.key_file = os.path.join(tempfile.mkdtemp(), "lg-x-key.txt")   # not there
+                self.pairing_wait = None
+
+            async def _resolve(self):
+                pass
+
+            async def port_open(self):
+                return True
+
+            async def _remote(self, pairing_wait=30):
+                self.pairing_wait = pairing_wait
+
+            async def apps_on_tv(self):
+                return [{"id": "plex", "title": "Plex", "icon": ""}]
+
+            async def _close(self):
+                pass
+
+        err = io.StringIO()
+        with mock.patch.object(lg, "LGTV", FakeTV), \
+                mock.patch.object(build.config, "TVS", [{"id": "x", "kind": "lg"}]), \
+                contextlib.redirect_stderr(err):
+            apps = build.read_apps("tv", "")
+        self.assertEqual([a["id"] for a in apps], ["plex"])
+        self.assertIn("move the highlight to Accept", err.getvalue())
 
 
 if __name__ == "__main__":

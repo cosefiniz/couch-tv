@@ -15,13 +15,16 @@ DRY=0; [ "${1:-}" = "--dry-run" ] && DRY=1
 git diff --quiet && git diff --cached --quiet || { echo "commit or stash your changes first"; exit 1; }
 
 git fetch -q origin main
-N=$(git rev-list --count "$PUB_BRANCH..origin/main")
+# refs/heads/...: a branch named like a folder (phone-app/) is otherwise ambiguous to git
+N=$(git rev-list --count "refs/heads/$PUB_BRANCH..origin/main")
 if [ "$N" = 0 ]; then echo "couch-tv has nothing new for $PUB_BRANCH."; exit 0; fi
 echo "couch-tv has $N new commit(s):"
-git log --format='  %h %s' "$PUB_BRANCH..origin/main"
+git log --format='  %h %s' "refs/heads/$PUB_BRANCH..origin/main" | head -40
+[ "$N" -gt 40 ] && echo "  ... and $((N - 40)) more"
 echo "Files they touch that we changed too (watch these):"
-comm -12 <(git diff --name-only "$(git merge-base "$PUB_BRANCH" origin/main)" origin/main | sort) \
-         <(git diff --name-only origin/main "$PUB_BRANCH" | sort) | sed 's/^/  /' || true
+BASE=$(git merge-base "refs/heads/$PUB_BRANCH" origin/main)
+comm -12 <(git diff --name-only "$BASE" origin/main -- | sort) \
+         <(git diff --name-only "$BASE" "refs/heads/$PUB_BRANCH" -- | sort) | sed 's/^/  /' || true
 [ "$DRY" = 1 ] && { echo "(dry-run: nothing merged)"; exit 0; }
 
 merge() {   # $1 = branch
