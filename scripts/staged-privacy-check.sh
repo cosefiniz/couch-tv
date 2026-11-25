@@ -122,11 +122,14 @@ case "${1:-}" in
       else
         range="$rsha..$lsha"
       fi
-      git log -p --no-color --no-ext-diff --format='+++ b/commit-message%n+%s%n+%b' "$range" "${SKIP[@]}" | tag_added > "$TMP/push"
+      # Commits that are already upstream (any origin/* ref) are public already: skip them, so a
+      # merge of couch-tv's own changes is not held up by its example addresses.
+      NOTUP=(--not --remotes=origin)
+      git log -p --no-color --no-ext-diff --format='+++ b/commit-message%n+%s%n+%b' "$range" "${NOTUP[@]}" "${SKIP[@]}" | tag_added > "$TMP/push"
       check_lines "$TMP/push" "push to $rref:"
-      git log --no-renames --name-only --format= "$range" | sort -u > "$TMP/names"
+      git log --no-renames --name-only --format= "$range" "${NOTUP[@]}" | sort -u > "$TMP/names"
       check_names "$TMP/names"
-      git log --format='%an <%ae>%n%cn <%ce>' "$range" | sort -u > "$TMP/ident"
+      git log --format='%an <%ae>%n%cn <%ce>' "$range" "${NOTUP[@]}" | sort -u > "$TMP/ident"
       check_ident "$TMP/ident"
     done
     ;;
