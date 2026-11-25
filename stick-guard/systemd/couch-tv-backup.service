@@ -1,0 +1,13 @@
+# Nightly backup (stick-guard/backup.sh). Installed with couch-tv-backup.timer:
+#   sudo cp stick-guard/systemd/couch-tv-backup.* /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now couch-tv-backup.timer
+[Unit]
+Description=couch-tv nightly backup of settings and data not in git
+
+[Service]
+Type=oneshot
+User=user
+Environment=HOME=/home/user
+ExecStart=/bin/sh /home/user/couch-tv/stick-guard/backup.sh
+Nice=10
+IOSchedulingClass=idle
