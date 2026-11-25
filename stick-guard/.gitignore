@@ -1,4 +1,5 @@
 config.json
 ntfy-topic
 tvplus-index
+upstream-seen
 __pycache__/

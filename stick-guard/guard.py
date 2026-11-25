@@ -20,7 +20,7 @@ Linux box (here a 4G USB modem stick running Debian). Runs as couch-tv-adb-guard
 Settings: config.json next to this file (config.example.json lists every key). The TV address
 falls back to the first TV in couch-tv's own config.json.
 """
-import json, os, re, secrets, socket, subprocess, threading, time, urllib.request
+import ipaddress, json, os, re, secrets, socket, subprocess, threading, time, urllib.request
 from zeroconf import Zeroconf, ServiceBrowser
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -197,6 +197,28 @@ bir kez izin verin. Sonraki güncellemeler uygulamanın içinden gelir.</small><
 </body></html>"""
 
 
+STATE_TR = {"ok": ("✓", "#2e9d5b"), "warn": ("!", "#c98a14"), "bad": ("✕", "#d2453b"), "unknown": ("?", "#888")}
+
+
+def status_html(st):
+    import html
+    rows, group = [], None
+    for i in st["items"]:
+        if i["group"] != group:
+            group = i["group"]
+            rows.append(f"<h2>{html.escape(group)}</h2>")
+        mark, colour = STATE_TR.get(i["state"], STATE_TR["unknown"])
+        hint = f"<div class=h>{html.escape(i['hint'])}</div>" if i.get("hint") else ""
+        rows.append(f"<div class=r><b style='color:{colour}'>{mark}</b><span>{html.escape(i['label'])}"
+                    f"<small>{html.escape(i['detail'])}</small>{hint}</span></div>")
+    return ("<!doctype html><html lang=tr><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
+            "<meta http-equiv=refresh content=30><title>Salon TV durumu</title><style>body{font-family:sans-serif;background:#111;"
+            "color:#eee;margin:0;padding:16px;max-width:560px}h2{font-size:15px;color:#aaa;margin:20px 0 6px}.r{display:flex;"
+            "gap:12px;padding:8px 0;border-bottom:1px solid #222}.r b{width:20px;text-align:center}small{display:block;color:#aaa}"
+            ".h{color:#e8b04a;font-size:13px;margin-top:2px}</style></head><body><h1>Salon TV durumu</h1>"
+            + "".join(rows) + f"<p><small>{html.escape(st['updated'])}</small></p></body></html>")
+
+
 def serve_hub():
     from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
     from urllib.parse import urlparse, parse_qs
@@ -210,7 +232,10 @@ def serve_hub():
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
-            self.send_header("Access-Control-Allow-Origin", "*")   # the remote is served from :5400
+            origin = allowed_origin(self.headers.get("Origin"), self.headers.get("Host"))
+            if origin:                       # only the bridge's own page (the remote, port 5400)
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Vary", "Origin")
             for k, v in (extra or {}).items():
                 self.send_header(k, v)
             self.end_headers()
@@ -223,6 +248,17 @@ def serve_hub():
             except Exception:
                 return None
 
+        def refuse(self):
+            """True (and answered) for a caller outside the home network, or a browser page that
+            is not the bridge's own."""
+            if not private_client(self.client_address[0]):
+                self.send(403, b"home network only", "text/plain")
+                return True
+            if self.headers.get("Origin") and not allowed_origin(self.headers.get("Origin"), self.headers.get("Host")):
+                self.send(403, b"origin not allowed", "text/plain")
+                return True
+            return False
+
         def do_HEAD(self):
             self.do_GET()
 
@@ -231,6 +267,10 @@ def serve_hub():
                                                  "Access-Control-Allow-Headers": "Content-Type"})
 
         def do_POST(self):
+            if self.refuse():
+                return
+            if not (self.headers.get("Content-Type") or "").startswith("application/json"):
+                return self.send(415, b'{"ok": false, "error": "json only"}', "application/json")
             u = urlparse(self.path)
             n = int(self.headers.get("Content-Length") or 0)
             try:
@@ -240,6 +280,8 @@ def serve_hub():
             if u.path == "/key":
                 # Only the keys the TV helper is allowed to ask for (red button -> last channel).
                 key = body.get("key")
+                if self.client_address[0] not in (TV, "127.0.0.1"):
+                    return self.send(403, b'{"ok": false, "error": "from the TV only"}', "application/json")
                 if key not in ("LAST_CHANNEL",):
                     return self.send(400, b'{"ok": false, "error": "key"}', "application/json")
                 sh(f"input keyevent KEYCODE_{key}", timeout=6)
@@ -256,6 +298,8 @@ def serve_hub():
             self.send(404, b"not found", "text/plain")
 
         def do_GET(self):
+            if self.refuse():
+                return
             u = urlparse(self.path)
             if u.path in ("/", "/app", "/app/"):
                 v = self.version() or {"versionName": "-"}
@@ -304,6 +348,10 @@ def serve_hub():
                 if self.command != "HEAD":
                     self.wfile.write(png)
                 return
+            if u.path == "/status":
+                return self.send(200, json.dumps(status(), ensure_ascii=False).encode(), "application/json; charset=utf-8")
+            if u.path == "/status.html":
+                return self.send(200, status_html(status()).encode(), "text/html; charset=utf-8")
             if u.path == "/health":
                 return self.send(200, b'{"ok": true}', "application/json")
             self.send(404, b"not found", "text/plain")
@@ -574,6 +622,265 @@ def night_check():
         night_done = today
 
 
+# ---------- 7. status, self-repair, couch-tv updates ----------
+# GET /status (hub) answers what is fine and what is not, for the phone app's System status page.
+# The stick part is read on each request (cached 20 s); the TV part on every connection and every
+# few hours, when the guard also puts back what a Google TV update can switch off.
+HELPER_PKG = "app.couchtv.helper"
+LAUNCHER_PKG = "app.couchtv.launcher"
+A11Y_SERVICES = [f"{LAUNCHER_PKG}/{LAUNCHER_PKG}.FireWatch", f"{HELPER_PKG}/{HELPER_PKG}.ChannelKey"]
+LISTENER = f"{HELPER_PKG}/{HELPER_PKG}.MediaListener"
+AMBIENT_PKG = "com.google.android.apps.tv.dreamx"
+SCREENSAVER = CFG.get("screensaver", "com.neilturner.aerialviews/.ui.screensaver.DreamActivity")
+REPAIR = CFG.get("self_repair", True)
+TV_CHECK_EVERY = 6 * 3600
+UPSTREAM_EVERY = 7 * 86400
+REPO = os.path.dirname(HERE)            # ~/couch-tv
+
+_status_lock = threading.Lock()
+tv_status = {"items": [], "checked": None}
+stick_cache = {"items": [], "at": 0}
+last_tv_ok = None                        # time the TV last answered over ADB
+last_tv_check = 0
+bad_since = {}                           # item id -> time it went bad (for one notification each)
+upstream = {"behind": None, "checked": None}
+
+
+def item(iid, group, label, state, detail="", hint=""):
+    return {"id": iid, "group": group, "label": label, "state": state, "detail": detail, "hint": hint}
+
+
+def run(*cmd, timeout=10):
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return r.stdout.strip()
+    except Exception:
+        return ""
+
+
+def stick_items():
+    if time.time() - stick_cache["at"] < 20:
+        return stick_cache["items"]
+    out = []
+    up = float(open("/proc/uptime").read().split()[0])
+    out.append(item("uptime", "Stick", "Açık kalma süresi", "ok", f"{up / 86400:.1f} gün"))
+    temps = []
+    for z in os.listdir("/sys/class/thermal"):
+        try:
+            temps.append(int(open(f"/sys/class/thermal/{z}/temp").read()) / 1000)
+        except (OSError, ValueError):
+            pass
+    if temps:
+        t = max(temps)
+        out.append(item("temp", "Stick", "Sıcaklık", "ok" if t < 70 else "warn" if t < 80 else "bad",
+                        f"{t:.0f} °C", "" if t < 70 else "Stick çok ısınıyor: havalandırılan bir yere al."))
+    mem = {l.split(":")[0]: int(l.split()[1]) for l in open("/proc/meminfo") if ":" in l and l.split()[1].isdigit()}
+    avail = mem.get("MemAvailable", 0) // 1024
+    out.append(item("mem", "Stick", "Boş bellek", "ok" if avail > 80 else "warn" if avail > 40 else "bad",
+                    f"{avail} MB", "" if avail > 80 else "Bellek azaldı; stick'i yeniden başlatmak iyi gelir."))
+    st = os.statvfs("/")
+    free_pct = st.f_bavail * 100 / st.f_blocks
+    out.append(item("disk", "Stick", "Boş disk", "ok" if free_pct > 15 else "warn" if free_pct > 5 else "bad",
+                    f"%{free_pct:.0f} ({st.f_bavail * st.f_frsize // 1048576} MB)"))
+    try:
+        sectors = int(open("/sys/block/mmcblk0/stat").read().split()[6])
+        per_day = sectors * 512 / 1048576 / max(up / 86400, 0.05)
+        out.append(item("writes", "Stick", "Disk yazma", "ok" if per_day < 1024 else "warn",
+                        f"günde ~{per_day:.0f} MB", "" if per_day < 1024 else "eMMC çok yazılıyor; kaynağına bakılmalı."))
+    except (OSError, ValueError, IndexError):
+        pass
+    sig = re.search(r"^\*:(\d+)", run("nmcli", "-t", "-f", "IN-USE,SIGNAL", "dev", "wifi"), re.M)
+    if sig:
+        s = int(sig.group(1))
+        out.append(item("wifi", "Stick", "Wi-Fi sinyali", "ok" if s >= 50 else "warn" if s >= 30 else "bad",
+                        f"%{s}", "" if s >= 50 else "Sinyal zayıf: stick'i modeme yaklaştır."))
+    for unit, label in (("couch-tv-bridge", "Köprü servisi"), ("wifi-watchdog", "Wi-Fi bekçisi")):
+        a = run("systemctl", "is-active", unit)
+        out.append(item(unit, "Servisler", label, "ok" if a == "active" else "bad", a or "?",
+                        "" if a == "active" else f"Stick'te: sudo systemctl restart {unit}"))
+    try:
+        h = json.loads(urllib.request.urlopen("http://127.0.0.1:5400/api/health", timeout=4).read())
+        out.append(item("bridge", "Servisler", "Köprü cevap veriyor", "ok",
+                        "TV bağlı" if h.get("tv_connected") else "TV bağlı değil"))
+    except Exception:
+        out.append(item("bridge", "Servisler", "Köprü cevap veriyor", "bad", "cevap yok",
+                        "Stick'te: sudo systemctl restart couch-tv-bridge"))
+    out.append(item("guard", "Servisler", "Nöbetçi", "ok", "çalışıyor"))
+    bk = sorted(f for f in os.listdir(BACKUPS) if f.endswith(".tgz")) if os.path.isdir(BACKUPS) else []
+    if bk:
+        age = (time.time() - os.path.getmtime(os.path.join(BACKUPS, bk[-1]))) / 86400
+        out.append(item("backup", "Stick", "Son yedek", "ok" if age < 2 else "warn", f"{age:.1f} gün önce ({len(bk)} yedek)",
+                        "" if age < 2 else "Gece yedeği alınmıyor: stick'te systemctl status couch-tv-backup.timer"))
+    else:
+        out.append(item("backup", "Stick", "Son yedek", "warn", "yok", "Gece yedeği henüz alınmadı."))
+    ver = run("git", "-C", REPO, "log", "-1", "--format=%h %cs")
+    behind = upstream["behind"]
+    out.append(item("version", "Sürüm", "Salon TV kodu", "ok" if not behind else "warn",
+                    ver + (f" · couch-tv'de {behind} yeni değişiklik" if behind else ""),
+                    "Bilgisayarda: scripts/sync-upstream.sh" if behind else ""))
+    stick_cache.update(items=out, at=time.time())
+    return out
+
+
+def tv_checks():
+    """Reads the TV's state and, with self_repair on, puts back what should be there."""
+    out, fixed = [], []
+
+    def fix(label, cmd):
+        if REPAIR:
+            sh(cmd, timeout=12)
+            fixed.append(label)
+
+    resolved = sh("cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME")
+    if LAUNCHER_PKG not in resolved:
+        fix("couch-tv yeniden varsayılan ana ekran", f"cmd package set-home-activity {HOME_ACT}")
+    out.append(item("home", "TV", "couch-tv ana ekran", "ok" if LAUNCHER_PKG in resolved or REPAIR else "bad",
+                    "varsayılan" if LAUNCHER_PKG in resolved else ("düzeltildi" if REPAIR else "değil")))
+    pkgs = sh("pm list packages")
+    have_helper = f"package:{HELPER_PKG}" in pkgs
+    enabled = sh("settings get secure enabled_accessibility_services").strip()
+    present = [s for s in enabled.split(":") if s and s != "null"]
+    want = [s for s in A11Y_SERVICES if have_helper or not s.startswith(HELPER_PKG)]
+    missing = [s for s in want if s not in present]
+    if missing:
+        fix("erişilebilirlik dinleyicileri (Home, kırmızı tuş) yeniden açık",
+            f"settings put secure enabled_accessibility_services {':'.join(present + missing)}; settings put secure accessibility_enabled 1")
+    out.append(item("a11y", "TV", "Home ve kırmızı tuş dinleyicileri", "ok" if not missing or REPAIR else "bad",
+                    "açık" if not missing else ("yeniden açıldı" if REPAIR else "kapalı: " + ", ".join(m.split(".")[-1] for m in missing))))
+    if have_helper:
+        listeners = sh("settings get secure enabled_notification_listeners")
+        if LISTENER not in listeners:
+            fix("yardımcının medya izni geri verildi", f"cmd notification allow_listener {LISTENER}")
+        out.append(item("listener", "TV", "Yardımcının medya izni", "ok" if LISTENER in listeners or REPAIR else "bad",
+                        "var" if LISTENER in listeners else ("geri verildi" if REPAIR else "yok"),
+                        "" if LISTENER in listeners or REPAIR else "Zaman çubuğu ve İzle simgeleri çalışmaz."))
+        perm = sh(f"dumpsys package {HELPER_PKG} | grep -m1 'WRITE_SECURE_SETTINGS: granted=true'")
+        if "granted=true" not in perm:
+            fix("yardımcının ayar izni geri verildi", f"pm grant {HELPER_PKG} android.permission.WRITE_SECURE_SETTINGS")
+        hv = re.search(r"versionName=(\S+)", sh(f"dumpsys package {HELPER_PKG} | grep -m1 versionName"))
+        out.append(item("helper", "TV", "TV yardımcısı", "ok", f"sürüm {hv.group(1) if hv else '?'}"))
+    else:
+        out.append(item("helper", "TV", "TV yardımcısı", "bad", "kurulu değil",
+                        "Zaman çubuğu, kırmızı tuş ve otomatik yeniden bağlanma çalışmaz."))
+    if f"package:{LAUNCHER_PKG}" in pkgs:
+        lv = re.search(r"versionName=(\S+)", sh(f"dumpsys package {LAUNCHER_PKG} | grep -m1 versionName"))
+        out.append(item("launcher", "TV", "couch-tv uygulaması", "ok", f"sürüm {lv.group(1) if lv else '?'}"))
+    if f"package:{AMBIENT_PKG}" in pkgs:
+        off = AMBIENT_PKG in sh("pm list packages -d")
+        if not off:
+            fix("reklamlı ambient mod yeniden kapatıldı", f"pm disable-user --user 0 {AMBIENT_PKG}")
+        out.append(item("ambient", "TV", "Reklamlı ambient mod", "ok" if off or REPAIR else "warn",
+                        "kapalı" if off else ("yeniden kapatıldı" if REPAIR else "açık")))
+    ss_pkg = SCREENSAVER.split("/")[0]
+    if SCREENSAVER and f"package:{ss_pkg}" in pkgs:
+        cur = sh("settings get secure screensaver_components").strip()
+        if cur != SCREENSAVER:
+            fix("ekran koruyucu yeniden Aerial Views", f"settings put secure screensaver_components {SCREENSAVER}")
+        out.append(item("screensaver", "TV", "Ekran koruyucu", "ok", "Aerial Views" if cur == SCREENSAVER or REPAIR else cur))
+    free = re.search(r"Free RAM:\s*([\d,]+)K", sh("dumpsys meminfo | grep -m1 'Free RAM'", timeout=20))
+    if free:
+        mb = int(free.group(1).replace(",", "")) // 1024
+        out.append(item("tvram", "TV", "TV boş bellek", "ok" if mb > 250 else "warn", f"{mb} MB"))
+    if fixed:
+        log("onarildi:", "; ".join(fixed))
+        notify("Salon TV kendini onardı", "Bir güncellemeden sonra geri alındı: " + "; ".join(fixed) + ".", "wrench")
+    return out
+
+
+def check_tv(force=False):
+    global last_tv_check
+    if not force and time.time() - last_tv_check < TV_CHECK_EVERY:
+        return
+    last_tv_check = time.time()
+    try:
+        items = tv_checks()
+    except Exception as e:
+        log("TV kontrol hatasi:", e)
+        return
+    with _status_lock:
+        tv_status.update(items=items, checked=time.time())
+
+
+def tv_link_item():
+    if connected:
+        return item("tvlink", "TV", "TV bağlantısı", "ok", "bağlı (ADB)")
+    seen = f"son görülme {time.strftime('%d.%m %H:%M', time.localtime(last_tv_ok))}" if last_tv_ok else "hiç görülmedi"
+    if down_since:
+        return item("tvlink", "TV", "TV bağlantısı", "bad", f"TV açık ama ADB kapalı ({seen})",
+                    "TV'de: Ayarlar → Sistem → Geliştirici seçenekleri → Kablosuz hata ayıklama → Aç.")
+    return item("tvlink", "TV", "TV bağlantısı", "ok", f"TV kapalı / beklemede ({seen})")
+
+
+def status():
+    items = stick_items() + [tv_link_item()] + list(tv_status["items"])
+    worst = "bad" if any(i["state"] == "bad" for i in items) else "warn" if any(i["state"] == "warn" for i in items) else "ok"
+    return {"ok": True, "state": worst, "updated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "tv_checked": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(tv_status["checked"])) if tv_status["checked"] else None,
+            "items": items}
+
+
+def watch_status():
+    """A problem on the stick that stays for 10 minutes becomes one notification (and one more
+    when it clears). The TV's own problems are repaired or reported by tv_checks."""
+    while True:
+        time.sleep(300)
+        try:
+            for i in stick_items():
+                if i["state"] == "bad":
+                    first = bad_since.setdefault(i["id"], time.time())
+                    if first and time.time() - first >= 600:
+                        notify(f"Salon TV: {i['label']}", f"{i['detail']}. {i['hint']}".strip(), "warning")
+                        bad_since[i["id"]] = 0          # told once
+                elif i["id"] in bad_since:
+                    if bad_since.pop(i["id"]) == 0:
+                        notify(f"Salon TV: {i['label']} düzeldi", i["detail"], "white_check_mark")
+        except Exception as e:
+            log("durum hatasi:", e)
+
+
+def check_upstream():
+    """Once a week: are there new couch-tv changes upstream (Seagey/couch-tv) not in this branch?"""
+    seen = os.path.join(HERE, "upstream-seen")
+    while True:
+        try:
+            run("git", "-C", REPO, "fetch", "-q", "origin", "main", timeout=120)
+            head = run("git", "-C", REPO, "rev-parse", "origin/main")
+            n = run("git", "-C", REPO, "rev-list", "--count", "HEAD..origin/main")
+            upstream.update(behind=int(n) if n.isdigit() else None, checked=time.time())
+            stick_cache["at"] = 0
+            if n.isdigit() and int(n) > 0 and head and (not os.path.exists(seen) or open(seen).read().strip() != head):
+                notify("couch-tv'de yenilik var", f"Seagey/couch-tv'de {n} yeni değişiklik var. "
+                       "Bilgisayarda scripts/sync-upstream.sh ile alınabilir.", "package")
+                open(seen, "w").write(head)
+        except Exception as e:
+            log("upstream hatasi:", e)
+        time.sleep(UPSTREAM_EVERY)
+
+
+# ---------- 8. hub safety ----------
+# The hub answers the home network only. Browsers may call it only from the bridge's own page
+# (port 5400), so another web site open on a phone cannot press keys or seek; the red-button key
+# is accepted from the TV alone.
+def private_client(addr):
+    """A caller on the home network (private, loopback or link-local address)."""
+    try:
+        ip = ipaddress.ip_address(addr)
+        return ip.is_private or ip.is_loopback or ip.is_link_local
+    except ValueError:
+        return False
+
+
+def allowed_origin(origin, host_header):
+    if not origin:
+        return None
+    host = (host_header or "").split(":")[0]
+    ok = {f"http://{h}:5400" for h in (host, my_ip(), "localhost", "127.0.0.1") if h}
+    return origin if origin in ok else None
+
+
+BACKUPS = os.path.expanduser(CFG.get("backup_dir", "~/yedek"))
+
+
 # ---------- main loop ----------
 def tick():
     """One look at the TV. True when it is up and reachable over ADB."""
@@ -599,16 +906,20 @@ def tick():
     down_since = None
     if "connected" not in adb("connect", S):
         return False
+    global last_tv_ok
+    last_tv_ok = time.time()
     if not connected:
         connected = True
         log("TV'ye baglanildi")
         configure_helper()
         bring_couch_tv("baglanti")
+        check_tv(force=True)
     if alerted:
         notify("TV hazır", "Bağlantı geri geldi, telefon kumandası tam çalışıyor.", "white_check_mark")
         alerted = False
     configure_helper()
     night_check()
+    check_tv()
     return True
 
 
@@ -618,6 +929,8 @@ log("couch-tv guard basladi, TV", TV)
 threading.Thread(target=watch_events, daemon=True).start()
 threading.Thread(target=serve_hub, daemon=True).start()
 threading.Thread(target=browse_wireless, daemon=True).start()
+threading.Thread(target=watch_status, daemon=True).start()
+threading.Thread(target=check_upstream, daemon=True).start()
 while True:
     try:
         ok = tick()
