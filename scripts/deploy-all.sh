@@ -27,7 +27,9 @@ DRY=0; PUBLISH=1
 for a in "$@"; do case "$a" in --dry-run) DRY=1 ;; --no-publish) PUBLISH=0 ;; *) echo "unknown: $a"; exit 2 ;; esac; done
 say() { printf '\n== %s\n' "$*"; }
 do_() { if [ "$DRY" = 1 ]; then echo "  (dry-run) $*"; else eval "$@"; fi; }
-on_stick() { ssh -o BatchMode=yes -o ConnectTimeout=10 "$STICK" "$@"; }
+# -n: ssh must not read this script's stdin (it would swallow the rest of a while-read loop).
+on_stick() { ssh -n -o BatchMode=yes -o ConnectTimeout=10 "$STICK" "$@"; }
+to_stick() { ssh -o BatchMode=yes -o ConnectTimeout=10 "$STICK" "$@"; }   # stdin goes to the stick
 
 say "0. checks"
 [ "$(git branch --show-current)" = "$WORK" ] || { echo "switch to $WORK first"; exit 1; }
@@ -91,7 +93,7 @@ HAVE=$(on_stick "cat ~/couch-tv/remote/dist/.built-from 2> /dev/null" || true)
 if [ "$WANT" != "$HAVE" ]; then
   echo "  rebuilding (remote/ at ${WANT:0:7}, stick has ${HAVE:0:7})"
   do_ '(cd remote && npm run -s build > /dev/null) && echo "$WANT" > remote/dist/.built-from'
-  do_ '(cd remote && tar czf - dist) | on_stick "cd ~/couch-tv/remote && rm -rf dist.new && mkdir dist.new && tar xzf - -C dist.new && rm -rf dist && mv dist.new/dist dist && rmdir dist.new"'
+  do_ '(cd remote && tar czf - dist) | to_stick "cd ~/couch-tv/remote && rm -rf dist.new && mkdir dist.new && tar xzf - -C dist.new && rm -rf dist && mv dist.new/dist dist && rmdir dist.new"'
 else
   echo "  up to date"
 fi
@@ -136,7 +138,11 @@ fi
 say "7. status"
 on_stick "curl -s http://127.0.0.1:5401/status" | python -X utf8 -c "
 import json, sys
-s = json.load(sys.stdin)
+raw = sys.stdin.read()
+try:
+    s = json.loads(raw)
+except ValueError:
+    print('  no status page on the stick yet (guard older than this script?)'); sys.exit(0)
 mark = {'ok': '  ok ', 'warn': '  !! ', 'bad': '  XX '}
 print('  overall:', s['state'])
 for i in s['items']:
