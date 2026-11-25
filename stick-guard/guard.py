@@ -722,6 +722,12 @@ def stick_items():
     return out
 
 
+def full_component(c):
+    """pkg/.Class -> pkg/pkg.Class, the way Settings and adb may each write the same service."""
+    pkg, _, cls = c.partition("/")
+    return f"{pkg}/{pkg}{cls}" if cls.startswith(".") else c
+
+
 def tv_checks():
     """Reads the TV's state and, with self_repair on, puts back what should be there."""
     out, fixed = [], []
@@ -731,20 +737,25 @@ def tv_checks():
             sh(cmd, timeout=12)
             fixed.append(label)
 
-    resolved = sh("cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME")
-    if LAUNCHER_PKG not in resolved:
+    # The chosen home (Settings' default). On Google TV the TV's own home still wins the HOME
+    # intent; the Home button watch brings couch-tv forward, so resolve-activity is not the test.
+    chosen = sh("cmd shortcut get-default-launcher")
+    if LAUNCHER_PKG not in chosen:
         fix("couch-tv yeniden varsayılan ana ekran", f"cmd package set-home-activity {HOME_ACT}")
-    out.append(item("home", "TV", "couch-tv ana ekran", "ok" if LAUNCHER_PKG in resolved or REPAIR else "bad",
-                    "varsayılan" if LAUNCHER_PKG in resolved else ("düzeltildi" if REPAIR else "değil")))
+    out.append(item("home", "TV", "couch-tv ana ekran", "ok" if LAUNCHER_PKG in chosen or REPAIR else "bad",
+                    "varsayılan" if LAUNCHER_PKG in chosen else ("düzeltildi" if REPAIR else "değil")))
     pkgs = sh("pm list packages")
     have_helper = f"package:{HELPER_PKG}" in pkgs
     enabled = sh("settings get secure enabled_accessibility_services").strip()
-    present = [s for s in enabled.split(":") if s and s != "null"]
+    raw = [s.strip() for s in enabled.split(":") if s.strip() and s.strip() != "null"]
+    present = list(dict.fromkeys(full_component(s) for s in raw))   # Android may keep pkg/.Class
     want = [s for s in A11Y_SERVICES if have_helper or not s.startswith(HELPER_PKG)]
     missing = [s for s in want if s not in present]
     if missing:
         fix("erişilebilirlik dinleyicileri (Home, kırmızı tuş) yeniden açık",
             f"settings put secure enabled_accessibility_services {':'.join(present + missing)}; settings put secure accessibility_enabled 1")
+    elif len(raw) != len(present):
+        sh(f"settings put secure enabled_accessibility_services {':'.join(present)}")   # drop doubles quietly
     out.append(item("a11y", "TV", "Home ve kırmızı tuş dinleyicileri", "ok" if not missing or REPAIR else "bad",
                     "açık" if not missing else ("yeniden açıldı" if REPAIR else "kapalı: " + ", ".join(m.split(".")[-1] for m in missing))))
     if have_helper:
