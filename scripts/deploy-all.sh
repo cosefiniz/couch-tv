@@ -107,10 +107,16 @@ else
 fi
 
 say "4. TV apps"
+TVUP=$(on_stick "adb connect $TV_IP:5555 > /dev/null; adb -s $TV_IP:5555 get-state 2> /dev/null" || true)
+[ "$TVUP" = device ] || echo "  the TV does not answer over ADB (off?): skipped"
 for app in tv-helper tv-browser; do
+  [ "$TVUP" = device ] || break
   pkg=$(sed -n 's/.*applicationId = "\(.*\)".*/\1/p' "$app/app/build.gradle.kts")
   want=$(sed -n 's/.*versionCode = \([0-9]*\).*/\1/p' "$app/app/build.gradle.kts")
   have=$(on_stick "adb -s $TV_IP:5555 shell dumpsys package $pkg 2> /dev/null | sed -n 's/.*versionCode=\([0-9]*\).*/\1/p' | head -1" || true)
+  if [ -z "$have" ] && on_stick "adb -s $TV_IP:5555 shell pm list packages $pkg" | grep -q "package:$pkg"; then
+    echo "  $pkg: installed, version unreadable just now: skipped"; continue
+  fi
   if [ -z "$have" ] || [ "$want" -gt "$have" ]; then
     echo "  $pkg: repo $want, TV ${have:-none} -> install"
     do_ "cmd //c \"\$(cygpath -w \"$ROOT/$app/build.cmd\")\" > /dev/null"
