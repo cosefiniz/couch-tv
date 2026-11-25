@@ -32,6 +32,7 @@ object Notes {
 
     fun check(c: Context) {
         if (!Hub.notificationsOn(c)) return
+        if (!checkReachable(c)) return
         checkEvents(c)
         val v = latestVersion(c) ?: return
         val p = Hub.prefs(c)
@@ -41,6 +42,32 @@ object Notes {
                 Intent(c, UpdateActivity::class.java))
             p.edit().putInt("notified_version", v.code).apply()
         }
+    }
+
+    private const val DOWN_ID = 3
+
+    /** False when the stick does not answer. At home and silent for 30 minutes: one notification;
+     *  another when it is back. Away from home nothing is counted. */
+    private fun checkReachable(c: Context): Boolean {
+        val p = Hub.prefs(c)
+        if (Hub.get(Hub.hub(c) + "/health", 5000) != null) {
+            if (p.getBoolean("down_told", false)) {
+                show(c, CH_TV, DOWN_ID, "Salon TV stick'i geri geldi", "Telefon kumandası yeniden çalışıyor.",
+                    Intent(c, MainActivity::class.java))
+            }
+            p.edit().remove("down_since").putBoolean("down_told", false).apply()
+            return true
+        }
+        if (!Hub.atHome(c)) return false
+        val now = System.currentTimeMillis()
+        val since = p.getLong("down_since", 0L).takeIf { it > 0 } ?: now.also { p.edit().putLong("down_since", it).apply() }
+        if (now - since >= 30 * 60_000L && !p.getBoolean("down_told", false)) {
+            show(c, CH_TV, DOWN_ID, "Salon TV stick'ine ulaşılamıyor",
+                "Yarım saattir cevap yok; telefon kumandası çalışmaz. Stick'in ışıklarına bak (kırmızı = güç, " +
+                    "mavi = Wi-Fi). Dokun: sistem durumu.", Intent(c, StatusActivity::class.java))
+            p.edit().putBoolean("down_told", true).apply()
+        }
+        return false
     }
 
     private fun checkEvents(c: Context) {

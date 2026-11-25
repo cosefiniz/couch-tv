@@ -10,4 +10,14 @@
             android:targetPackage="app.couchtv.phone"
             android:targetClass="app.couchtv.phone.SettingsActivity" />
     </shortcut>
+    <shortcut
+        android:shortcutId="status"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/status">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="app.couchtv.phone"
+            android:targetClass="app.couchtv.phone.StatusActivity" />
+    </shortcut>
 </shortcuts>

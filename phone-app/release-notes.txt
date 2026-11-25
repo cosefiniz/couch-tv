@@ -1,0 +1,1 @@
+Sistem durumu ekranı (Ayarlar'da ve simgeye uzun basınca). Stick yarım saat cevap vermezse bildirim.

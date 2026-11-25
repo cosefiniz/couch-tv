@@ -74,6 +74,10 @@ class MainActivity : Activity() {
         buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
         buttons.addView(Button(this).apply { text = getString(R.string.retry); setOnClickListener { connect(true) } })
         buttons.addView(Button(this).apply {
+            text = getString(R.string.status)
+            setOnClickListener { startActivity(Intent(this@MainActivity, StatusActivity::class.java)) }
+        })
+        buttons.addView(Button(this).apply {
             text = getString(R.string.settings)
             setOnClickListener { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) }
         })

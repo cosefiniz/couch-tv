@@ -122,8 +122,16 @@ object Hub {
         return found.get()?.also { setHost(c, it) }
     }
 
+    /** True when this phone's Wi-Fi address and the stick's address share their first three parts
+     *  (both at home). A name instead of an address counts as home. */
+    fun atHome(c: Context): Boolean {
+        val h = host(c)
+        if (!h.matches(Regex("""\d+\.\d+\.\d+\.\d+"""))) return localPrefix() != null
+        return localPrefix() == h.substringBeforeLast('.')
+    }
+
     /** The first three parts of this phone's private IPv4 address on Wi-Fi; null when it has none. */
-    private fun localPrefix(): String? = try {
+    fun localPrefix(): String? = try {
         NetworkInterface.getNetworkInterfaces().toList()
             .filter { it.isUp && !it.isLoopback }
             .flatMap { it.inetAddresses.toList() }

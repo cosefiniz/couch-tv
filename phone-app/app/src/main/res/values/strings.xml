@@ -2,6 +2,7 @@
 <resources>
     <string name="app_name">Salon TV</string>
     <string name="settings">Ayarlar</string>
+    <string name="status">Sistem durumu</string>
     <string name="update_title">Güncelleme</string>
     <string name="tile_power">TV gücü</string>
     <string name="connecting">Köprü aranıyor…</string>

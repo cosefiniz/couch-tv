@@ -38,6 +38,11 @@
             android:label="@string/settings" />
 
         <activity
+            android:name=".StatusActivity"
+            android:exported="true"
+            android:label="Sistem durumu" />
+
+        <activity
             android:name=".UpdateActivity"
             android:exported="false"
             android:label="@string/update_title"

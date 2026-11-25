@@ -72,6 +72,10 @@ class SettingsActivity : Activity() {
             }
         })
 
+        box.addView(Button(this).apply {
+            text = "Sistem durumu"
+            setOnClickListener { startActivity(Intent(this@SettingsActivity, StatusActivity::class.java)) }
+        })
         box.addView(label("Sürüm ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"))
         box.addView(Button(this).apply {
             text = "Güncellemeleri kontrol et"
