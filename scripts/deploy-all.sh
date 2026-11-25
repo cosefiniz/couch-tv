@@ -40,13 +40,21 @@ echo "  stick $STICK, TV $TV_IP"
 
 if [ "$PUBLISH" = 1 ]; then
   say "1. publish"
-  NEW=$(git cherry "$PUB_BRANCH" "$WORK" | awk '/^\+/{print $2}')
+  # git config salon.published = the last commit of $WORK already on $PUB_BRANCH (set here after
+  # each publish; set it once by hand when starting: git config salon.published <commit>).
+  MARK=$(git config --get salon.published || true)
+  [ -n "$MARK" ] || { echo "set the last published $WORK commit first: git config salon.published <commit>"; exit 1; }
+  NEW=$(git rev-list --reverse "$MARK..$WORK")
   if [ -n "$NEW" ]; then
     echo "  to $PUB_BRANCH: $(echo "$NEW" | wc -l) commit(s)"
     do_ git checkout -q "$PUB_BRANCH"
-    for c in $NEW; do do_ git cherry-pick "$c" > /dev/null; done
+    for c in $NEW; do
+      # a commit with nothing new for the public branch is skipped instead of stopping everything
+      do_ "git cherry-pick --allow-empty $c > /dev/null && { git diff --quiet HEAD~1 HEAD && git reset -q --hard HEAD~1 || true; }"
+    done
     do_ git push -q "$PUB_REMOTE" "$PUB_BRANCH"
     do_ git checkout -q "$WORK"
+    do_ git config salon.published "$(git rev-parse "$WORK")"
   else
     echo "  $PUB_BRANCH is up to date"
   fi
