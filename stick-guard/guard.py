@@ -728,8 +728,28 @@ def full_component(c):
     return f"{pkg}/{pkg}{cls}" if cls.startswith(".") else c
 
 
+def tv_awake():
+    """True only while the screen is on. In standby a Google TV comes onto the Wi-Fi for a few
+    seconds every ten minutes or so; its settings then read empty or half done, so nothing is
+    judged (or repaired) from it."""
+    return "mWakefulness=Awake" in sh("dumpsys power | grep -m1 mWakefulness=", timeout=8)
+
+
+def answered(text):
+    """A shell answer that can be trusted: not empty, not an adb or Java error."""
+    t = (text or "").strip()
+    return bool(t) and not re.search(r"error|exception|not found|timeout|device offline|closed", t, re.I)
+
+
+repair_told = {}                         # repair text -> time it was last notified
+
+
 def tv_checks():
-    """Reads the TV's state and, with self_repair on, puts back what should be there."""
+    """Reads the TV's state and, with self_repair on, puts back what should be there. Returns None
+    when the TV is asleep (nothing read). A reading that does not come back clean counts as
+    unknown and is never repaired."""
+    if not tv_awake():
+        return None
     out, fixed = [], []
 
     def fix(label, cmd):
@@ -740,33 +760,44 @@ def tv_checks():
     # The chosen home (Settings' default). On Google TV the TV's own home still wins the HOME
     # intent; the Home button watch brings couch-tv forward, so resolve-activity is not the test.
     chosen = sh("cmd shortcut get-default-launcher")
-    if LAUNCHER_PKG not in chosen:
-        fix("couch-tv yeniden varsayılan ana ekran", f"cmd package set-home-activity {HOME_ACT}")
-    out.append(item("home", "TV", "couch-tv ana ekran", "ok" if LAUNCHER_PKG in chosen or REPAIR else "bad",
-                    "varsayılan" if LAUNCHER_PKG in chosen else ("düzeltildi" if REPAIR else "değil")))
+    if "Launcher:" not in chosen:
+        out.append(item("home", "TV", "couch-tv ana ekran", "unknown", "okunamadı"))
+    else:
+        if LAUNCHER_PKG not in chosen:
+            fix("couch-tv yeniden varsayılan ana ekran", f"cmd package set-home-activity {HOME_ACT}")
+        out.append(item("home", "TV", "couch-tv ana ekran", "ok" if LAUNCHER_PKG in chosen or REPAIR else "bad",
+                        "varsayılan" if LAUNCHER_PKG in chosen else ("düzeltildi" if REPAIR else "değil")))
     pkgs = sh("pm list packages")
+    if f"package:{LAUNCHER_PKG}" not in pkgs:      # the list itself did not come back: stop here
+        return out if "package:" in pkgs else None
     have_helper = f"package:{HELPER_PKG}" in pkgs
     enabled = sh("settings get secure enabled_accessibility_services").strip()
     raw = [s.strip() for s in enabled.split(":") if s.strip() and s.strip() != "null"]
     present = list(dict.fromkeys(full_component(s) for s in raw))   # Android may keep pkg/.Class
     want = [s for s in A11Y_SERVICES if have_helper or not s.startswith(HELPER_PKG)]
     missing = [s for s in want if s not in present]
-    if missing:
+    if not answered(enabled) or enabled == "null":
+        missing = []                      # unknown, never repaired from an empty answer
+        out.append(item("a11y", "TV", "Home ve kırmızı tuş dinleyicileri", "unknown", "okunamadı"))
+    elif missing:
         fix("erişilebilirlik dinleyicileri (Home, kırmızı tuş) yeniden açık",
             f"settings put secure enabled_accessibility_services {':'.join(present + missing)}; settings put secure accessibility_enabled 1")
     elif len(raw) != len(present):
         sh(f"settings put secure enabled_accessibility_services {':'.join(present)}")   # drop doubles quietly
-    out.append(item("a11y", "TV", "Home ve kırmızı tuş dinleyicileri", "ok" if not missing or REPAIR else "bad",
-                    "açık" if not missing else ("yeniden açıldı" if REPAIR else "kapalı: " + ", ".join(m.split(".")[-1] for m in missing))))
+    if answered(enabled) and enabled != "null":
+        out.append(item("a11y", "TV", "Home ve kırmızı tuş dinleyicileri", "ok" if not missing or REPAIR else "bad",
+                        "açık" if not missing else ("yeniden açıldı" if REPAIR else "kapalı: " + ", ".join(m.split(".")[-1] for m in missing))))
     if have_helper:
         listeners = sh("settings get secure enabled_notification_listeners")
+        if not answered(listeners):
+            listeners = LISTENER          # unknown: leave it alone
         if LISTENER not in listeners:
             fix("yardımcının medya izni geri verildi", f"cmd notification allow_listener {LISTENER}")
         out.append(item("listener", "TV", "Yardımcının medya izni", "ok" if LISTENER in listeners or REPAIR else "bad",
                         "var" if LISTENER in listeners else ("geri verildi" if REPAIR else "yok"),
                         "" if LISTENER in listeners or REPAIR else "Zaman çubuğu ve İzle simgeleri çalışmaz."))
-        perm = sh(f"dumpsys package {HELPER_PKG} | grep -m1 'WRITE_SECURE_SETTINGS: granted=true'")
-        if "granted=true" not in perm:
+        perm = sh(f"dumpsys package {HELPER_PKG} | grep -m1 'WRITE_SECURE_SETTINGS: granted'")
+        if answered(perm) and "granted=false" in perm:
             fix("yardımcının ayar izni geri verildi", f"pm grant {HELPER_PKG} android.permission.WRITE_SECURE_SETTINGS")
         hv = re.search(r"versionName=(\S+)", sh(f"dumpsys package {HELPER_PKG} | grep -m1 versionName"))
         out.append(item("helper", "TV", "TV yardımcısı", "ok", f"sürüm {hv.group(1) if hv else '?'}"))
@@ -777,14 +808,17 @@ def tv_checks():
         lv = re.search(r"versionName=(\S+)", sh(f"dumpsys package {LAUNCHER_PKG} | grep -m1 versionName"))
         out.append(item("launcher", "TV", "couch-tv uygulaması", "ok", f"sürüm {lv.group(1) if lv else '?'}"))
     if f"package:{AMBIENT_PKG}" in pkgs:
-        off = AMBIENT_PKG in sh("pm list packages -d")
-        if not off:
+        disabled = sh("pm list packages -d")
+        off = AMBIENT_PKG in disabled or "package:" not in disabled and not answered(disabled)
+        if not off and "package:" in disabled:
             fix("reklamlı ambient mod yeniden kapatıldı", f"pm disable-user --user 0 {AMBIENT_PKG}")
         out.append(item("ambient", "TV", "Reklamlı ambient mod", "ok" if off or REPAIR else "warn",
                         "kapalı" if off else ("yeniden kapatıldı" if REPAIR else "açık")))
     ss_pkg = SCREENSAVER.split("/")[0]
     if SCREENSAVER and f"package:{ss_pkg}" in pkgs:
         cur = sh("settings get secure screensaver_components").strip()
+        if not answered(cur):
+            cur = SCREENSAVER             # unknown: leave it alone
         if cur != SCREENSAVER:
             fix("ekran koruyucu yeniden Aerial Views", f"settings put secure screensaver_components {SCREENSAVER}")
         out.append(item("screensaver", "TV", "Ekran koruyucu", "ok", "Aerial Views" if cur == SCREENSAVER or REPAIR else cur))
@@ -793,8 +827,11 @@ def tv_checks():
         mb = int(free.group(1).replace(",", "")) // 1024
         out.append(item("tvram", "TV", "TV boş bellek", "ok" if mb > 250 else "warn", f"{mb} MB"))
     if fixed:
-        log("onarildi:", "; ".join(fixed))
-        notify("Salon TV kendini onardı", "Bir güncellemeden sonra geri alındı: " + "; ".join(fixed) + ".", "wrench")
+        text = "; ".join(fixed)
+        log("onarildi:", text)
+        if time.time() - repair_told.get(text, 0) > 86400:   # the same repair: one notification a day
+            notify("Salon TV kendini onardı", "Bir güncellemeden sonra geri alındı: " + text + ".", "wrench")
+            repair_told[text] = time.time()
     return out
 
 
@@ -802,12 +839,14 @@ def check_tv(force=False):
     global last_tv_check
     if not force and time.time() - last_tv_check < TV_CHECK_EVERY:
         return
-    last_tv_check = time.time()
     try:
         items = tv_checks()
     except Exception as e:
         log("TV kontrol hatasi:", e)
         return
+    if items is None:                    # asleep: look again once the screen is on
+        return
+    last_tv_check = time.time()
     with _status_lock:
         tv_status.update(items=items, checked=time.time())
 
